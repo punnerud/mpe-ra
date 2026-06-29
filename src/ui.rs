@@ -905,6 +905,10 @@ impl Game {
             }
             if panel.contains(m) {
                 self.lang_dragging = false;
+                // Velg kun nar trykket STARTET inne i rull-omradet. Apne-trykket
+                // (pa "Language"-knappen, som kan ligge oppa lista pa smal skjerm)
+                // sees ikke her, sa det velger ikke ved et slipp -> lista blir apen.
+                self.lang_press_in = content.contains(m);
                 self.ui_block = true;
             } else {
                 self.lang_open = false; // trykk utenfor lukker lista
@@ -922,15 +926,18 @@ impl Game {
             }
             self.ui_block = true;
         }
-        if released && content.contains(m) && !self.lang_dragging {
-            let rel = m.y - (content.y + 4.0) + self.lang_scroll;
-            let idx = (rel / self.lang_row_h()).floor() as i32;
-            let order = self.lang_order();
-            if idx >= 0 && (idx as usize) < order.len() {
-                self.lang = i18n::from_index(order[idx as usize]);
-                self.lang_open = false;
+        if released {
+            if self.lang_press_in && content.contains(m) && !self.lang_dragging {
+                let rel = m.y - (content.y + 4.0) + self.lang_scroll;
+                let idx = (rel / self.lang_row_h()).floor() as i32;
+                let order = self.lang_order();
+                if idx >= 0 && (idx as usize) < order.len() {
+                    self.lang = i18n::from_index(order[idx as usize]);
+                    self.lang_open = false;
+                }
+                self.ui_block = true;
             }
-            self.ui_block = true;
+            self.lang_press_in = false;
         }
     }
 

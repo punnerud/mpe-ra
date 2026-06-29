@@ -861,6 +861,7 @@ struct Game {
     ui_block: bool,   // pekeren ble brukt av UI denne rammen -> ikke selekter
     ui_press: Vec2,   // posisjon der venstre-trykk startet (UI-dra)
     lang_dragging: bool, // ruller spraklista med fingeren
+    lang_press_in: bool, // trykket startet inne i spraklista (kreves for a velge)
     ui_init: bool,    // forste-frame-oppsett gjort (sidebar-standard etter skjerm)
     // --- Skjerm / meny ---
     screen: Screen,        // Start (nivameny) / Guide / Playing
@@ -1011,6 +1012,7 @@ impl Game {
             ui_block: false,
             ui_press: Vec2::ZERO,
             lang_dragging: false,
+            lang_press_in: false,
             ui_init: false,
             screen: Screen::Start,
             max_unlocked: 0,
