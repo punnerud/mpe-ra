@@ -9,8 +9,8 @@ use macroquad::prelude::*;
 
 use crate::i18n::{self, Key};
 use crate::{
-    bridge, team_color, txt, txt_measure, unit_stats, BuildingKind, Game, Unit, UnitKind, MAP_H,
-    MAP_W, SIDEBAR_W, TEAM_ENEMY, TEAM_PLAYER, TILE,
+    bridge, levels, team_color, txt, txt_measure, unit_stats, BuildingKind, Game, Unit, UnitKind,
+    MAP_H, MAP_W, SIDEBAR_W, TEAM_ENEMY, TEAM_PLAYER, TILE,
 };
 
 
@@ -41,6 +41,7 @@ enum DevAct {
     Restart,
     Center,
     Sound,
+    Win, // vinn nivaet umiddelbart (testing / hopp)
 }
 
 impl Game {
@@ -79,6 +80,27 @@ impl Game {
         let half = (SIDEBAR_W - 16.0 - 6.0) / 2.0;
         Rect::new(x + half + 6.0, screen_height() - 30.0, half, 24.0)
     }
+    // Seier/tap-panelets bunnboks. Returnerer (Spill igjen, evt. Neste niva).
+    // Neste-knapp kun ved seier og hvis det finnes flere nivaer.
+    fn outcome_box(&self) -> Rect {
+        let bw = 320.0_f32.min(screen_width() - 40.0);
+        let bh = 150.0;
+        Rect::new((screen_width() - bw) * 0.5, (screen_height() - bh) * 0.5, bw, bh)
+    }
+    fn outcome_btns(&self) -> (Rect, Option<Rect>) {
+        let b = self.outcome_box();
+        let y = b.y + b.h - 46.0;
+        let has_next = self.outcome == Some(true) && self.level + 1 < levels::count();
+        if has_next {
+            let w = (b.w - 24.0) * 0.5;
+            (
+                Rect::new(b.x + 8.0, y, w, 34.0),
+                Some(Rect::new(b.x + 8.0 + w + 8.0, y, w, 34.0)),
+            )
+        } else {
+            (Rect::new(b.x + 8.0, y, b.w - 16.0, 34.0), None)
+        }
+    }
     fn dev_warn_btns(&self) -> (Rect, Rect) {
         let bw = 320.0_f32.min(screen_width() - 40.0);
         let bh = 130.0;
@@ -96,6 +118,7 @@ impl Game {
             DevAct::Close, DevAct::Give, DevAct::Inf, DevAct::Tank, DevAct::Harv,
             DevAct::SpawnYou, DevAct::SpawnFoe, DevAct::Pause, DevAct::Free, DevAct::God,
             DevAct::Reveal, DevAct::Speed, DevAct::Restart, DevAct::Center, DevAct::Sound,
+            DevAct::Win,
         ];
         let (x0, y0) = (12.0, 176.0);
         let (cw, ch, gx, gy) = (112.0, 24.0, 6.0, 5.0);
@@ -117,6 +140,9 @@ impl Game {
     /// Er punktet over en in-canvas-kontroll? Brukes til a stoppe kant-scroll
     /// og verdens-klikk nar man bruker UI/menyer.
     pub(crate) fn point_in_ui(&self, p: Vec2) -> bool {
+        if self.outcome.is_some() {
+            return true; // seier/tap-panel er modalt
+        }
         let (jc, jr) = self.ui_joy();
         if p.distance(jc) <= jr {
             return true;
@@ -247,6 +273,7 @@ impl Game {
             DevAct::Restart => self.t(Key::DevRestart).to_string(),
             DevAct::Center => self.t(Key::DevCenter).to_string(),
             DevAct::Sound => format!("{} {}", self.t(Key::DevSound), on(!self.muted)),
+            DevAct::Win => self.t(Key::DevWin).to_string(),
         }
     }
 
@@ -291,20 +318,17 @@ impl Game {
                 };
             }
             DevAct::Restart => {
-                let (lang, cheater, muted) = (self.lang, self.cheater, self.muted);
-                *self = Game::new();
-                self.lang = lang;
-                self.cheater = cheater;
-                self.muted = muted;
+                let lvl = self.level;
+                self.load_level(lvl); // spill gjeldende niva pa nytt
                 self.dev_open = true;
                 self.ui_init = true;
-                bridge::set_muted(muted);
             }
             DevAct::Center => self.center_on_base(),
             DevAct::Sound => {
                 self.muted = !self.muted;
                 bridge::set_muted(self.muted);
             }
+            DevAct::Win => self.outcome = Some(true),
         }
     }
 
@@ -325,6 +349,30 @@ impl Game {
         let released = is_mouse_button_released(MouseButton::Left);
         if pressed {
             self.ui_press = m;
+        }
+
+        // --- Seier/tap-panel (modalt) ---
+        if self.outcome.is_some() {
+            self.ui_block = true;
+            if pressed {
+                let win = self.outcome == Some(true);
+                let (replay, next) = self.outcome_btns();
+                if replay.contains(m) {
+                    let l = self.level;
+                    self.load_level(l);
+                    return;
+                }
+                if win {
+                    if let Some(nx) = next {
+                        if nx.contains(m) {
+                            let l = self.level + 1;
+                            self.load_level(l);
+                            return;
+                        }
+                    }
+                }
+            }
+            return;
         }
 
         // --- Joystick (eier pekeren mens den dras) ---
@@ -662,6 +710,32 @@ impl Game {
             let (acc, can) = self.dev_warn_btns();
             btn(acc, acc.contains(m), self.t(Key::DevAccept), 15.0, false);
             btn(can, can.contains(m), self.t(Key::DevCancel), 15.0, false);
+        }
+
+        // Seier/tap-panel (modalt) -- "Spill igjen" / "Neste niva".
+        if let Some(win) = self.outcome {
+            draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::new(0.0, 0.0, 0.0, 0.55));
+            let b = self.outcome_box();
+            draw_rectangle(b.x, b.y, b.w, b.h, Color::new(0.10, 0.13, 0.12, 0.98));
+            let border = if win { Color::new(0.30, 0.80, 0.42, 1.0) } else { Color::new(0.90, 0.40, 0.30, 1.0) };
+            draw_rectangle_lines(b.x, b.y, b.w, b.h, 2.0, border);
+            let title = if win {
+                if self.level + 1 >= levels::count() {
+                    self.t(Key::CampaignDone).to_string()
+                } else {
+                    format!("{} {} {}", self.t(Key::Level), self.level + 1, self.t(Key::LevelComplete))
+                }
+            } else {
+                self.t(Key::Defeat).to_string()
+            };
+            let tcol = if win { Color::new(0.70, 1.0, 0.75, 1.0) } else { Color::new(1.0, 0.6, 0.5, 1.0) };
+            let d = txt_measure(&title, 26.0);
+            txt(&title, b.x + (b.w - d.width).max(8.0) * 0.5, b.y + 50.0, 26.0, tcol);
+            let (replay, next) = self.outcome_btns();
+            btn(replay, replay.contains(m), self.t(Key::Replay), 16.0, false);
+            if let Some(nx) = next {
+                btn(nx, nx.contains(m), self.t(Key::NextLevel), 16.0, false);
+            }
         }
     }
 }

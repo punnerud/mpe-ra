@@ -1,0 +1,12 @@
+[
+  {"level":61,"player_base":[8,40],"enemies":[{"pos":[55,8],"style":"Armor"},{"pos":[12,8],"style":"Swarm"}],"water":[[32,24,5],[40,38,4],[24,16,5]],"ore":[[44,30,4]],"rock_density":0.958},
+  {"level":62,"player_base":[7,7],"enemies":[{"pos":[56,41],"style":"Armor"}],"water":[[30,24,5],[20,38,4],[45,14,5]],"ore":[[40,30,4]],"rock_density":0.958},
+  {"level":63,"player_base":[56,8],"enemies":[{"pos":[8,40],"style":"Swarm"},{"pos":[50,41],"style":"Armor"}],"water":[[30,24,5],[28,40,4],[40,20,5]],"ore":[[20,18,4]],"rock_density":0.958},
+  {"level":64,"player_base":[57,41],"enemies":[{"pos":[7,7],"style":"Swarm"}],"water":[[32,24,5],[40,38,4],[18,20,5]],"ore":[[25,30,4]],"rock_density":0.958},
+  {"level":65,"player_base":[7,24],"enemies":[{"pos":[54,9],"style":"Armor"},{"pos":[54,40],"style":"Swarm"}],"water":[[32,24,5],[30,10,4],[30,38,4]],"ore":[[40,24,4]],"rock_density":0.958},
+  {"level":66,"player_base":[32,7],"enemies":[{"pos":[32,41],"style":"Armor"}],"water":[[18,24,5],[46,24,5],[10,38,4]],"ore":[[32,24,4]],"rock_density":0.958},
+  {"level":67,"player_base":[9,41],"enemies":[{"pos":[10,8],"style":"Swarm"},{"pos":[54,12],"style":"Armor"}],"water":[[30,26,5],[40,40,4],[34,12,4]],"ore":[[24,20,4]],"rock_density":0.958},
+  {"level":68,"player_base":[57,24],"enemies":[{"pos":[7,24],"style":"Armor"}],"water":[[32,12,5],[32,36,5],[20,24,4]],"ore":[[42,34,4]],"rock_density":0.958},
+  {"level":69,"player_base":[20,7],"enemies":[{"pos":[9,41],"style":"Armor"},{"pos":[55,40],"style":"Swarm"}],"water":[[32,22,5],[40,40,4],[22,30,5]],"ore":[[48,22,4]],"rock_density":0.958},
+  {"level":70,"player_base":[32,41],"enemies":[{"pos":[55,8],"style":"Swarm"}],"water":[[16,24,5],[48,28,5],[24,12,4]],"ore":[[44,20,4]],"rock_density":0.958}
+]

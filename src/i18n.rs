@@ -140,6 +140,12 @@ pub enum Key {
     DevCancel,
     Cheater,
     DevFps,
+    Level,
+    LevelComplete,
+    NextLevel,
+    Replay,
+    CampaignDone,
+    DevWin,
 }
 
 pub const ALL_KEYS: &[Key] = &[
@@ -213,6 +219,12 @@ pub const ALL_KEYS: &[Key] = &[
     Key::DevCancel,
     Key::Cheater,
     Key::DevFps,
+    Key::Level,
+    Key::LevelComplete,
+    Key::NextLevel,
+    Key::Replay,
+    Key::CampaignDone,
+    Key::DevWin,
 ];
 
 /// Hovedoppslag: oversettelse for (sprak, nokkel) med engelsk fallback.
@@ -388,6 +400,12 @@ fn en(k: Key) -> &'static str {
         Key::DevCancel => "Cancel",
         Key::Cheater => "Cheater",
         Key::DevFps => "FPS",
+        Key::Level => "Level",
+        Key::LevelComplete => "complete!",
+        Key::NextLevel => "Next level",
+        Key::Replay => "Replay",
+        Key::CampaignDone => "Campaign complete!",
+        Key::DevWin => "Win level",
     }
 }
 
@@ -463,6 +481,12 @@ fn no(k: Key) -> &'static str {
         Key::DevCancel => "Avbryt",
         Key::Cheater => "Juksemaker",
         Key::DevFps => "FPS",
+        Key::Level => "Nivå",
+        Key::LevelComplete => "fullført!",
+        Key::NextLevel => "Neste nivå",
+        Key::Replay => "Spill igjen",
+        Key::CampaignDone => "Kampanjen fullført!",
+        Key::DevWin => "Vinn nivå",
     }
 }
 
@@ -538,6 +562,12 @@ fn sv(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -613,6 +643,12 @@ fn da(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -688,6 +724,12 @@ fn de(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -763,6 +805,12 @@ fn nl(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -838,6 +886,12 @@ fn fr(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -913,6 +967,12 @@ fn es(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -988,6 +1048,12 @@ fn es_mx(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -1063,6 +1129,12 @@ fn pt(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -1138,6 +1210,12 @@ fn pt_br(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -1213,6 +1291,12 @@ fn it(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -1288,6 +1372,12 @@ fn el(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -1363,6 +1453,12 @@ fn fi(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -1438,6 +1534,12 @@ fn pl(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -1513,6 +1615,12 @@ fn cs(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -1588,6 +1696,12 @@ fn sk(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -1663,6 +1777,12 @@ fn hu(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -1738,6 +1858,12 @@ fn ro(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -1813,6 +1939,12 @@ fn hr(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -1888,6 +2020,12 @@ fn sl(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -1963,6 +2101,12 @@ fn bg(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -2038,6 +2182,12 @@ fn uk(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -2113,6 +2263,12 @@ fn tr(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -2188,6 +2344,12 @@ fn is(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -2263,6 +2425,12 @@ fn et(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -2338,6 +2506,12 @@ fn lv(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -2413,6 +2587,12 @@ fn lt(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -2488,6 +2668,12 @@ fn ga(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -2563,6 +2749,12 @@ fn ca(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -2638,6 +2830,12 @@ fn zh(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -2713,6 +2911,12 @@ fn zh_tw(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -2788,6 +2992,12 @@ fn ja(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -2863,6 +3073,12 @@ fn ko(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -2938,6 +3154,12 @@ fn hi(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -3013,6 +3235,12 @@ fn th(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -3088,6 +3316,12 @@ fn vi(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -3163,6 +3397,12 @@ fn id(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -3238,6 +3478,12 @@ fn ms(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -3313,6 +3559,12 @@ fn tl(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -3388,6 +3640,12 @@ fn bn(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -3463,6 +3721,12 @@ fn ar(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -3538,6 +3802,12 @@ fn he(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 
@@ -3613,6 +3883,12 @@ fn fa(k: Key) -> &'static str {
         Key::DevCancel => "",
         Key::Cheater => "",
         Key::DevFps => "",
+        Key::Level => "",
+        Key::LevelComplete => "",
+        Key::NextLevel => "",
+        Key::Replay => "",
+        Key::CampaignDone => "",
+        Key::DevWin => "",
     }
 }
 

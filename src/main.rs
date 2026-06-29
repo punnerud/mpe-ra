@@ -25,6 +25,7 @@ use std::cmp::Reverse;
 use std::collections::{BinaryHeap, VecDeque};
 
 mod i18n;
+mod levels;
 mod ui;
 use i18n::{Key, Lang};
 
@@ -230,20 +231,32 @@ const SND_TURRET: i32 = 6;
 const SND_WIN: i32 = 7;
 const SND_LOSE: i32 = 8;
 
-// Fiende-AI.
-const ENEMY_AI_TICK: f32 = 1.5; // hvor ofte AI tar beslutninger
+// Fiende-AI. (Bolge-/tick-tall er na per niva i Game-feltene, satt fra LevelSpec.)
 const ENEMY_DESIRED_HARVESTERS: usize = 2; // bygg opp okonomi for haer
-const ENEMY_FIRST_WAVE: usize = 4; // forste angrep krever sa mange kampenheter
-const ENEMY_WAVE_GROWTH: usize = 2; // hver bolge blir storre
-const ENEMY_WAVE_CAP: usize = 10; // tak pa bolgestorrelse
 const ENEMY_DEFEND_RADIUS: f32 = 360.0; // trusler innenfor denne fra HK = forsvar
 
 // Lagfarge (faction-trim): spiller bla, fiende rod -- C&C/Red Alert-stil.
+// Fiendens fargetint settes av gjeldende nivas stil (Balanced/Armor/Swarm), sa
+// "to ulike fiender" foles distinkt. Lagres globalt sa team_color() beholder
+// signaturen og tinter alt (enheter, bygg, minikart).
+thread_local! {
+    static ENEMY_TINT: std::cell::Cell<(f32, f32, f32)> =
+        const { std::cell::Cell::new((0.90, 0.30, 0.25)) };
+}
+fn set_enemy_tint(style: levels::EnemyStyle) {
+    let c = match style {
+        levels::EnemyStyle::Balanced => (0.90, 0.30, 0.25), // rod
+        levels::EnemyStyle::Armor => (0.85, 0.62, 0.20),    // amber
+        levels::EnemyStyle::Swarm => (0.72, 0.34, 0.85),    // fiolett
+    };
+    ENEMY_TINT.with(|t| t.set(c));
+}
 fn team_color(team: u8) -> Color {
     if team == TEAM_PLAYER {
         Color::new(0.28, 0.55, 0.95, 1.0)
     } else {
-        Color::new(0.90, 0.30, 0.25, 1.0)
+        let (r, g, b) = ENEMY_TINT.with(|t| t.get());
+        Color::new(r, g, b, 1.0)
     }
 }
 
@@ -306,22 +319,6 @@ fn hash2(x: i32, y: i32) -> f32 {
     (h as u32 as f32) / (u32::MAX as f32)
 }
 
-fn gen_map() -> Vec<Terrain> {
-    let mut map = vec![Terrain::Grass; MAP_W * MAP_H];
-    for y in 0..MAP_H {
-        for x in 0..MAP_W {
-            if hash2(x as i32, y as i32) > 0.965 {
-                map[y * MAP_W + x] = Terrain::Rock;
-            }
-        }
-    }
-    carve_blob(&mut map, 12, 38, 5.0, Terrain::Water);
-    carve_blob(&mut map, 20, 16, 4.5, Terrain::Ore);
-    carve_blob(&mut map, 44, 32, 5.0, Terrain::Ore);
-    carve_blob(&mut map, 32, 24, 3.5, Terrain::Ore);
-    map
-}
-
 fn carve_blob(map: &mut [Terrain], cx: i32, cy: i32, r: f32, t: Terrain) {
     let ri = r.ceil() as i32 + 1;
     for dy in -ri..=ri {
@@ -337,6 +334,31 @@ fn carve_blob(map: &mut [Terrain], cx: i32, cy: i32, r: f32, t: Terrain) {
             }
         }
     }
+}
+
+// Plasser en standardbase (HQ + raffineri + fabrikk + 1 hoster + 3 infanteri)
+// rundt `base`. Spilleren speiler bygg-utlegget mot enheten. `power` skalerer
+// fiende-enheters hp (vanskelighet). Returnerer samlepunktet.
+fn spawn_base(units: &mut Vec<Unit>, buildings: &mut Vec<Building>, base: Vec2, team: u8, power: f32) -> Vec2 {
+    let m = if team == TEAM_PLAYER { -1.0 } else { 1.0 };
+    buildings.push(Building::new(base, team, BuildingKind::Hq));
+    buildings.push(Building::new(base + vec2(150.0 * m, 20.0), team, BuildingKind::Refinery));
+    buildings.push(Building::new(base + vec2(40.0 * m, 150.0), team, BuildingKind::Factory));
+    let mut harv = Unit::new(base + vec2(150.0 * m, 120.0), team, UnitKind::Harvester);
+    let mut rifles: Vec<Unit> = (0..3)
+        .map(|i| Unit::new(base + vec2(60.0 + i as f32 * 30.0, 60.0), team, UnitKind::Rifleman))
+        .collect();
+    if team == TEAM_ENEMY && power != 1.0 {
+        harv.hp *= power;
+        harv.max_hp *= power;
+        for u in &mut rifles {
+            u.hp *= power;
+            u.max_hp *= power;
+        }
+    }
+    units.push(harv);
+    units.extend(rifles);
+    base + vec2(40.0 * m, 230.0)
 }
 
 // ---------------------------------------------------------------------------
@@ -806,6 +828,15 @@ struct Game {
     speed: f32,
     paused: bool,
     lang: Lang, // valgt sprak (standard engelsk)
+    // --- Kampanje / niva (les fra levels::LEVELS) ---
+    level: usize,           // gjeldende niva (0-basert)
+    enemy_income: f32,      // passiv kreditt/sek for fiendelaget
+    first_wave: u32,        // forste bolge krever sa mange kampenheter
+    wave_growth: u32,       // okning per bolge
+    wave_cap: u32,          // tak pa bolgestorrelse
+    ai_tick: f32,           // sek mellom AI-beslutninger
+    enemy_power: f32,       // hp/skade-multiplikator pa fiende-enheter
+    enemy_style: levels::EnemyStyle, // former fiendens enhetsmiks + tint
     // --- In-canvas UI (alt i Rust, native-klar -- ingen JS/HTML) ---
     joy_active: bool, // joysticken dras na
     joy_vec: Vec2,    // knott-forskyvning [-1,1] (for tegning)
@@ -824,7 +855,32 @@ struct Game {
 
 impl Game {
     fn new() -> Self {
-        let map = gen_map();
+        Self::new_level(0)
+    }
+
+    // Bygg et niva fra levels::LEVELS. Terreng, baseplassering, kreditter og
+    // vanskelighets-tall kommer fra LevelSpec.
+    fn new_level(level: usize) -> Self {
+        let spec = levels::get(level);
+        set_enemy_tint(spec.enemies[0].style);
+
+        let mut map = levels::gen_map_for(spec);
+        // Rydd terrenget rundt hver base (ikke vann/fjell under bygg).
+        let clear = |map: &mut Vec<Terrain>, c: (i32, i32)| {
+            for dy in -4i32..=4 {
+                for dx in -4i32..=4 {
+                    let (x, y) = (c.0 + dx, c.1 + dy);
+                    if x >= 0 && y >= 0 && (x as usize) < MAP_W && (y as usize) < MAP_H {
+                        map[y as usize * MAP_W + x as usize] = Terrain::Grass;
+                    }
+                }
+            }
+        };
+        clear(&mut map, spec.player_base);
+        for e in spec.enemies {
+            clear(&mut map, e.pos);
+        }
+
         let mut ore = vec![0.0f32; MAP_W * MAP_H];
         for i in 0..map.len() {
             if map[i] == Terrain::Ore {
@@ -834,26 +890,17 @@ impl Game {
 
         let mut units = Vec::new();
         let mut buildings = Vec::new();
-
-        let pbase = vec2((MAP_W as f32 - 9.0) * TILE, (MAP_H as f32 - 9.0) * TILE);
-        buildings.push(Building::new(pbase, TEAM_PLAYER, BuildingKind::Hq));
-        buildings.push(Building::new(pbase + vec2(-150.0, 20.0), TEAM_PLAYER, BuildingKind::Refinery));
-        buildings.push(Building::new(pbase + vec2(-40.0, 150.0), TEAM_PLAYER, BuildingKind::Factory));
-        units.push(Unit::new(pbase + vec2(-150.0, 120.0), TEAM_PLAYER, UnitKind::Harvester));
-        for i in 0..3 {
-            units.push(Unit::new(pbase + vec2(60.0 + i as f32 * 30.0, 60.0), TEAM_PLAYER, UnitKind::Rifleman));
+        let pbase = vec2(spec.player_base.0 as f32 * TILE, spec.player_base.1 as f32 * TILE);
+        let player_rally = spawn_base(&mut units, &mut buildings, pbase, TEAM_PLAYER, 1.0);
+        let mut enemy_rally = pbase;
+        for (k, e) in spec.enemies.iter().enumerate() {
+            let eb = vec2(e.pos.0 as f32 * TILE, e.pos.1 as f32 * TILE);
+            let r = spawn_base(&mut units, &mut buildings, eb, TEAM_ENEMY, spec.enemy_power);
+            if k == 0 {
+                enemy_rally = r;
+            }
         }
-
-        let ebase = vec2(8.0 * TILE, 7.0 * TILE);
-        buildings.push(Building::new(ebase, TEAM_ENEMY, BuildingKind::Hq));
-        buildings.push(Building::new(ebase + vec2(150.0, 20.0), TEAM_ENEMY, BuildingKind::Refinery));
-        buildings.push(Building::new(ebase + vec2(40.0, 150.0), TEAM_ENEMY, BuildingKind::Factory));
-        units.push(Unit::new(ebase + vec2(150.0, 120.0), TEAM_ENEMY, UnitKind::Harvester));
-        for i in 0..3 {
-            units.push(Unit::new(ebase + vec2(60.0 + i as f32 * 30.0, 60.0), TEAM_ENEMY, UnitKind::Rifleman));
-        }
-
-        let rally = [pbase + vec2(-40.0, 230.0), ebase + vec2(40.0, 230.0)];
+        let rally = [player_rally, enemy_rally];
 
         let mut g = Game {
             map,
@@ -863,7 +910,7 @@ impl Game {
             shots: Vec::new(),
             projectiles: Vec::new(),
             confirm_remove: false,
-            credits: [1200.0, 1500.0],
+            credits: [spec.player_credits, spec.enemy_credits],
             prod: (0..2).map(|_| Production::default()).collect(),
             rally,
             explored: vec![false; MAP_W * MAP_H],
@@ -884,7 +931,7 @@ impl Game {
             right_pan_dragged: false,
             sidebar_open: true,
             pan_vel: Vec2::ZERO,
-            enemy_attack_timer: 6.0,
+            enemy_attack_timer: spec.attack_delay,
             enemy_waves: 0,
             placing: None,
             move_src: None,
@@ -897,6 +944,14 @@ impl Game {
             speed: 1.0,
             paused: false,
             lang: Lang::En,
+            level,
+            enemy_income: spec.enemy_income,
+            first_wave: spec.first_wave,
+            wave_growth: spec.wave_growth,
+            wave_cap: spec.wave_cap,
+            ai_tick: spec.ai_tick,
+            enemy_power: spec.enemy_power,
+            enemy_style: spec.enemies[0].style,
             joy_active: false,
             joy_vec: Vec2::ZERO,
             dev_open: false,
@@ -913,6 +968,19 @@ impl Game {
         };
         g.compute_visibility();
         g
+    }
+
+    // Last et niva pa nytt (bevarer sprak/cheater/lyd + UI-tilstand over bytte).
+    fn load_level(&mut self, level: usize) {
+        let (lang, cheater, muted) = (self.lang, self.cheater, self.muted);
+        let (sidebar, ui_init) = (self.sidebar_open, self.ui_init);
+        *self = Game::new_level(level.min(levels::count().saturating_sub(1)));
+        self.lang = lang;
+        self.cheater = cheater;
+        self.muted = muted;
+        self.sidebar_open = sidebar;
+        self.ui_init = ui_init;
+        bridge::set_muted(muted);
     }
 
     /// Oversett en nokkel til valgt sprak (engelsk fallback).
@@ -1971,19 +2039,44 @@ impl Game {
         if harvesters < ENEMY_DESIRED_HARVESTERS && credits >= unit_stats(UnitKind::Harvester).cost {
             return Some(UnitKind::Harvester);
         }
-        // Deretter haer: stridsvogn om rad, ellers infanteri.
-        if credits >= unit_stats(UnitKind::Tank).cost {
-            Some(UnitKind::Tank)
-        } else if credits >= unit_stats(UnitKind::Rifleman).cost {
-            Some(UnitKind::Rifleman)
-        } else {
-            None
+        let tank = unit_stats(UnitKind::Tank).cost;
+        let rifle = unit_stats(UnitKind::Rifleman).cost;
+        // Stilen former enhetsmiksen.
+        match self.enemy_style {
+            // Sverm: stort sett billig infanteri.
+            levels::EnemyStyle::Swarm => {
+                if credits >= rifle {
+                    Some(UnitKind::Rifleman)
+                } else {
+                    None
+                }
+            }
+            // Tank-tung: spar opp til stridsvogn; bygg infanteri bare nar langt unna.
+            levels::EnemyStyle::Armor => {
+                if credits >= tank {
+                    Some(UnitKind::Tank)
+                } else if credits >= rifle && credits < tank * 0.6 {
+                    Some(UnitKind::Rifleman)
+                } else {
+                    None
+                }
+            }
+            // Balansert: stridsvogn om rad, ellers infanteri (dagens logikk).
+            levels::EnemyStyle::Balanced => {
+                if credits >= tank {
+                    Some(UnitKind::Tank)
+                } else if credits >= rifle {
+                    Some(UnitKind::Rifleman)
+                } else {
+                    None
+                }
+            }
         }
     }
 
     // Storrelsen pa neste angrepsbolge (vokser for hver sendt bolge).
     fn enemy_wave_size(&self) -> usize {
-        (ENEMY_FIRST_WAVE + self.enemy_waves as usize * ENEMY_WAVE_GROWTH).min(ENEMY_WAVE_CAP)
+        (self.first_wave + self.enemy_waves * self.wave_growth).min(self.wave_cap) as usize
     }
 
     // Indekser til fiendens kampenheter (ikke hostere).
@@ -2080,7 +2173,7 @@ impl Game {
 
         let blocked = self.compute_blocked();
 
-        self.credits[TEAM_ENEMY as usize] += 14.0 * dt;
+        self.credits[TEAM_ENEMY as usize] += self.enemy_income * dt;
 
         // Produksjon: en byggeplass per fabrikk, kjorer parallelt.
         for team in 0..2 {
@@ -2126,6 +2219,10 @@ impl Game {
                 let (tx, ty) = ((want.x / TILE).floor() as i32, (want.y / TILE).floor() as i32);
                 let spawn_pos = nearest_free(&blocked, tx, ty).map(|(x, y)| tile_center(x, y)).unwrap_or(want);
                 let mut u = Unit::new(spawn_pos, team as u8, kind);
+                if team as u8 == TEAM_ENEMY && self.enemy_power != 1.0 {
+                    u.hp *= self.enemy_power;
+                    u.max_hp *= self.enemy_power;
+                }
                 if kind != UnitKind::Harvester {
                     u.path = astar(&blocked, u.pos, self.rally[team]);
                     u.target = Some(self.rally[team]);
@@ -2147,7 +2244,7 @@ impl Game {
         // Beslutninger med jevne mellomrom (forsvar + hærsamling + forfolging).
         self.enemy_attack_timer -= dt;
         if self.enemy_attack_timer <= 0.0 {
-            self.enemy_attack_timer = ENEMY_AI_TICK;
+            self.enemy_attack_timer = self.ai_tick;
             self.enemy_ai_decide();
             // Aggressive enheter som har stoppet -> finn nytt mal (forfolging).
             for i in self.enemy_combat_units() {
@@ -2524,10 +2621,12 @@ impl Game {
                     team,
                     life: SHOT_LIFETIME,
                 });
+                // Fiende-enheter skalerer skade med nivaets enemy_power.
+                let dmg = if team == TEAM_ENEMY { s.damage * self.enemy_power } else { s.damage };
                 if is_bld {
-                    bdmg[j] += s.damage;
+                    bdmg[j] += dmg;
                 } else {
-                    udmg[j] += s.damage;
+                    udmg[j] += dmg;
                 }
             }
         }
@@ -2669,9 +2768,8 @@ impl Game {
         };
         match code {
             1 => {
-                let lang = self.lang;
-                *self = Game::new();
-                self.lang = lang; // behold valgt sprak over restart
+                let lvl = self.level; // spill gjeldende niva pa nytt
+                self.load_level(lvl);
             }
             2 => {
                 // Sentrer pa spillerens base (HK), ikke kartmidten (som er
@@ -3357,17 +3455,7 @@ impl Game {
 
         // (Hjelpelinjen "venstre-dra: velg ..." skjult bevisst -- folk finner
         // ut av styringen ved a prove.)
-
-        if let Some(win) = self.outcome {
-            let msg = self.t(if win { Key::Victory } else { Key::Defeat });
-            let size = 80.0;
-            let dims = txt_measure(msg, size);
-            let x = (w - dims.width) / 2.0;
-            let y = screen_height() / 2.0;
-            let col = if win { GREEN } else { RED };
-            txt(msg, x, y, size, col);
-            txt(self.t(Key::PlayAgain), x.max(10.0), y + 40.0, 26.0, WHITE);
-        }
+        // Seier/tap-panelet tegnes i ui.rs (draw_controls) med klikkbare knapper.
     }
 }
 
@@ -3402,9 +3490,8 @@ async fn main() {
         let dt = get_frame_time().min(0.05);
 
         if is_key_pressed(KeyCode::R) {
-            let lang = game.lang;
-            game = Game::new();
-            game.lang = lang; // behold valgt sprak over restart
+            let lvl = game.level; // spill gjeldende niva pa nytt
+            game.load_level(lvl);
         }
 
         game.handle_ui();
@@ -3993,8 +4080,34 @@ mod tests {
     }
 
     #[test]
+    fn niva_med_to_fiender_har_to_hk() {
+        // Et to-fiende-niva skal gi to fiende-HK (begge ma rives for seier).
+        let idx = levels::LEVELS
+            .iter()
+            .position(|s| s.enemies.len() == 2)
+            .expect("kampanjen har minst ett to-fiende-niva");
+        let g = Game::new_level(idx);
+        let ehq = g
+            .buildings
+            .iter()
+            .filter(|b| b.team == TEAM_ENEMY && b.kind == BuildingKind::Hq)
+            .count();
+        assert_eq!(ehq, 2, "to fiendebaser -> to HK");
+    }
+
+    #[test]
+    fn niva_setter_riktige_kreditter() {
+        // Hvert niva starter med kredittene fra LevelSpec.
+        for (i, s) in levels::LEVELS.iter().enumerate() {
+            let g = Game::new_level(i);
+            assert_eq!(g.credits[TEAM_PLAYER as usize], s.player_credits, "niva {}", i + 1);
+            assert_eq!(g.credits[TEAM_ENEMY as usize], s.enemy_credits, "niva {}", i + 1);
+        }
+    }
+
+    #[test]
     fn fiende_venter_med_angrep_til_nok_styrke() {
-        // Fersk start har 3 kampenheter < forste bolge (4) -> ingen blir aggressive.
+        // Fersk start har 3 kampenheter < forste bolge -> ingen blir aggressive.
         let mut g = Game::new();
         g.enemy_ai_decide();
         let aggro = g.units.iter().filter(|u| u.team == TEAM_ENEMY && u.aggressive).count();
@@ -4011,7 +4124,7 @@ mod tests {
         }
         g.enemy_ai_decide();
         let aggro = g.units.iter().filter(|u| u.team == TEAM_ENEMY && u.aggressive).count();
-        assert!(aggro >= ENEMY_FIRST_WAVE, "hele bolgen skal angripe, aggro={}", aggro);
+        assert!(aggro >= g.first_wave as usize, "hele bolgen skal angripe, aggro={}", aggro);
         assert_eq!(g.enemy_waves, 1, "en bolge sendt");
     }
 
@@ -4031,12 +4144,13 @@ mod tests {
     #[test]
     fn fiende_bolge_vokser_og_klampes() {
         let mut g = Game::new();
+        let (fw, gr, cap) = (g.first_wave, g.wave_growth, g.wave_cap);
         g.enemy_waves = 0;
-        assert_eq!(g.enemy_wave_size(), ENEMY_FIRST_WAVE);
+        assert_eq!(g.enemy_wave_size(), fw as usize);
         g.enemy_waves = 1;
-        assert_eq!(g.enemy_wave_size(), ENEMY_FIRST_WAVE + ENEMY_WAVE_GROWTH);
+        assert_eq!(g.enemy_wave_size(), (fw + gr) as usize);
         g.enemy_waves = 99;
-        assert_eq!(g.enemy_wave_size(), ENEMY_WAVE_CAP, "bolgestorrelse skal klampes");
+        assert_eq!(g.enemy_wave_size(), cap as usize, "bolgestorrelse skal klampes");
     }
 
     #[test]
