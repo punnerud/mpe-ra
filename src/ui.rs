@@ -78,10 +78,20 @@ impl Game {
     fn ui_sidebar_close(&self) -> Rect {
         Rect::new(self.play_w() + SIDEBAR_W - 30.0, 4.0, 26.0, 24.0)
     }
-    // Lyd av/pa -- rett over burger-knappen (kun nar byggmenyen er lukket).
-    fn ui_mute_btn(&self) -> Rect {
+    // Settings (lyd/pause) -- rett over burger-knappen (kun nar menyen er lukket).
+    fn ui_settings_btn(&self) -> Rect {
         let b = self.ui_burger();
         Rect::new(b.x, 4.0, b.w, 30.0)
+    }
+    // Settings-panel som apnes under burgeren: rader for Lyd og Pause.
+    fn settings_panel_rect(&self) -> Rect {
+        let bu = self.ui_burger();
+        let w = 150.0;
+        Rect::new(bu.x + bu.w - w, bu.y + bu.h + 6.0, w, 2.0 * 30.0 + 12.0)
+    }
+    fn settings_row_rect(&self, i: usize) -> Rect {
+        let p = self.settings_panel_rect();
+        Rect::new(p.x + 6.0, p.y + 6.0 + i as f32 * 30.0, p.w - 12.0, 26.0)
     }
     // Dev og sprakvelger ligger nederst i byggmenyen (burger/sidebar) -- borte
     // fra det mobil-uvennlige nedre venstre hjornet. Kun aktive nar sidebaren er
@@ -174,8 +184,11 @@ impl Game {
         if self.ui_zoom_in().contains(p) || self.ui_zoom_out().contains(p) {
             return true;
         }
-        // Burger + lyd-knapp vises kun nar byggmenyen er lukket.
-        if !self.sidebar_on() && (self.ui_burger().contains(p) || self.ui_mute_btn().contains(p)) {
+        // Burger + settings-knapp vises kun nar byggmenyen er lukket.
+        if !self.sidebar_on() && (self.ui_burger().contains(p) || self.ui_settings_btn().contains(p)) {
+            return true;
+        }
+        if self.settings_open && !self.sidebar_on() && self.settings_panel_rect().contains(p) {
             return true;
         }
         if self.sidebar_on()
@@ -568,12 +581,28 @@ impl Game {
                 self.ui_block = true;
                 return;
             }
-            // Lyd av/pa over burgeren (kun nar menyen er lukket).
-            if !self.sidebar_on() && self.ui_mute_btn().contains(m) {
-                self.muted = !self.muted;
-                bridge::set_muted(self.muted);
+            // Settings-knapp over burgeren (kun nar menyen er lukket).
+            if !self.sidebar_on() && self.ui_settings_btn().contains(m) {
+                self.settings_open = !self.settings_open;
                 self.ui_block = true;
                 return;
+            }
+            // Settings-panel apent: rader for Lyd / Pause; trykk utenfor lukker.
+            if self.settings_open && !self.sidebar_on() {
+                if self.settings_panel_rect().contains(m) {
+                    if self.settings_row_rect(0).contains(m) {
+                        self.muted = !self.muted;
+                        bridge::set_muted(self.muted);
+                    } else if self.settings_row_rect(1).contains(m) {
+                        self.paused = !self.paused;
+                    }
+                    self.ui_block = true;
+                    return;
+                } else {
+                    self.settings_open = false;
+                    self.ui_block = true;
+                    return;
+                }
             }
             // X oppe til hoyre i sidebaren lukker byggmenyen.
             if self.sidebar_on() && self.ui_sidebar_close().contains(m) {
@@ -651,24 +680,29 @@ impl Game {
             let bu = self.ui_burger();
             btn(bu, bu.contains(m), "=", 18.0, false);
 
-            // Lyd av/pa rett over burgeren -- hoyttalerikon (rod strek = av).
-            let mb = self.ui_mute_btn();
-            let hot = mb.contains(m);
-            draw_rectangle(mb.x, mb.y, mb.w, mb.h, if hot { Color::new(0.18, 0.24, 0.22, 0.95) } else { Color::new(0.10, 0.14, 0.12, 0.92) });
-            draw_rectangle_lines(mb.x, mb.y, mb.w, mb.h, 1.5, Color::new(0.25, 0.55, 0.35, 0.9));
-            let icx = mb.x + mb.w * 0.5;
-            let icy = mb.y + mb.h * 0.5;
-            let col = if self.muted { Color::new(0.95, 0.45, 0.40, 1.0) } else { Color::new(0.60, 0.95, 0.70, 1.0) };
-            // Hoyttaler: liten boks (driver) + kjegle.
-            draw_rectangle(icx - 9.0, icy - 3.0, 4.0, 6.0, col);
-            draw_triangle(vec2(icx - 5.0, icy - 7.0), vec2(icx - 5.0, icy + 7.0), vec2(icx + 1.0, icy), col);
-            if self.muted {
-                // Rod skrastrek = av.
-                draw_line(icx - 10.0, icy - 9.0, icx + 11.0, icy + 9.0, 2.0, col);
-            } else {
-                // Lydbolger = pa.
-                draw_line(icx + 5.0, icy - 5.0, icx + 5.0, icy + 5.0, 1.6, col);
-                draw_line(icx + 9.0, icy - 8.0, icx + 9.0, icy + 8.0, 1.6, col);
+            // Settings-knapp (slider-ikon) rett over burgeren.
+            let sb = self.ui_settings_btn();
+            btn(sb, sb.contains(m), "", 14.0, self.settings_open);
+            let icx = sb.x + sb.w * 0.5;
+            let icy = sb.y + sb.h * 0.5;
+            let icol = Color::new(0.78, 0.92, 0.82, 1.0);
+            // Tre slidere: linje + knott pa ulik x (klassisk "innstillinger").
+            for (k, kx) in [(-7.0f32, 6.0f32), (0.0, -4.0), (7.0, 3.0)] {
+                let y = icy + k;
+                draw_line(icx - 11.0, y, icx + 11.0, y, 1.6, icol);
+                draw_circle(icx + kx, y, 2.6, icol);
+            }
+            // Settings-panel (Lyd / Pause).
+            if self.settings_open {
+                let p = self.settings_panel_rect();
+                draw_rectangle(p.x, p.y, p.w, p.h, panel_bg);
+                draw_rectangle_lines(p.x, p.y, p.w, p.h, 1.5, accent);
+                let r0 = self.settings_row_rect(0);
+                let snd = format!("{} {}", self.t(Key::DevSound), if self.muted { self.t(Key::DevOff) } else { self.t(Key::DevOn) });
+                btn(r0, r0.contains(m), &snd, 14.0, !self.muted);
+                let r1 = self.settings_row_rect(1);
+                let pause = format!("{} {}", self.t(Key::DevPause), if self.paused { self.t(Key::DevOn) } else { self.t(Key::DevOff) });
+                btn(r1, r1.contains(m), &pause, 14.0, self.paused);
             }
         }
 
@@ -906,7 +940,7 @@ impl Game {
         // Nivaer 0..=max_unlocked er spillbare; vis alle disse (nivå 1 forst).
         (self.max_unlocked + 1).min(levels::count())
     }
-    fn menu_level_rect(&self, i: usize) -> Rect {
+    pub(crate) fn menu_level_rect(&self, i: usize) -> Rect {
         let cols = self.menu_cols();
         let (bw, bh, gap) = (44.0, 38.0, 8.0);
         let total_w = cols as f32 * bw + (cols as f32 - 1.0) * gap;
@@ -1032,6 +1066,10 @@ impl Game {
         let m = vec2(mx, my);
         let accent = team_color(TEAM_PLAYER);
         draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::new(0.06, 0.08, 0.10, 1.0));
+        // Levende kart-preview som bakgrunn (kun start-skjermen).
+        if self.screen == Screen::Start {
+            self.draw_preview_bg();
+        }
         let btn = |r: Rect, hot: bool, label: &str, fsz: f32, active: bool| {
             let bg = if active {
                 Color::new(0.16, 0.30, 0.20, 1.0)

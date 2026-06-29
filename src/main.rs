@@ -870,6 +870,12 @@ struct Game {
     prev_cam: Vec2,        // forrige frames kamera (for a oppdage navigering)
     rally_show: f32,       // nedtelling: vis samlepunkt-flagget etter at det ble satt
     confirm_level: Option<usize>, // nivameny: avventer bekreftelse for bytte (mister data)
+    touch_device: bool,    // har sett touch-input -> sla av kant-scroll (mobil)
+    settings_open: bool,   // settings-panel (lyd/pause) over burgeren er apent
+    // Levende kart-forhandsvisning bak nivavelgeren (egen simulering i loop).
+    preview: Option<Box<Game>>,
+    preview_level: usize,
+    preview_time: f32,
 }
 
 impl Game {
@@ -1012,6 +1018,11 @@ impl Game {
             prev_cam: Vec2::ZERO,
             rally_show: 0.0,
             confirm_level: None,
+            touch_device: false,
+            settings_open: false,
+            preview: None,
+            preview_level: 0,
+            preview_time: 0.0,
         };
         g.compute_visibility();
         g
@@ -1467,18 +1478,24 @@ impl Game {
             self.mouse_active = true;
         }
         self.last_mouse = mouse;
+        // Touch-enhet? (sticky). Pa mobil panorerer man med joysticken, sa kant-
+        // scroll skal IKKE vaere aktiv der -- ellers scroller nesten ethvert trykk.
+        if !touches().is_empty() {
+            self.touch_device = true;
+        }
 
         let inside = mx >= 0.0 && my >= 0.0 && mx <= screen_width() && my <= screen_height();
         // Ikke kant-scroll nar pekeren er over en kontroll/meny (ellers drifter
         // kartet nar man trykker zoom/burger i hjornet) -- og ikke nar den apne
         // byggmenyen ligger under pekeren (man skal kunne velge i menyen i ro).
         if self.mouse_active
+            && !self.touch_device
             && inside
             && !self.joy_active
             && !self.point_in_ui(mouse)
             && !self.in_sidebar(mouse)
         {
-            // Bredere kant-sone -> man slipper a treffe helt ytterst for a panorere.
+            // Bredere kant-sone (kun mus) -> man slipper a treffe helt ytterst.
             let edge = 70.0;
             if mx < edge {
                 mv.x -= 1.0;
@@ -1851,12 +1868,14 @@ impl Game {
         }
 
         if is_mouse_button_pressed(MouseButton::Left) {
-            self.drag_start = Some(mouse);
+            // Lagre i VERDENS-koordinat -> boksen forankres til kartet og dekker
+            // stadig storre omrade nar kameraet panorerer under draget.
+            self.drag_start = Some(self.screen_to_world(mouse));
         }
 
         if is_mouse_button_released(MouseButton::Left) {
             if let Some(start) = self.drag_start.take() {
-                if (mouse - start).length() < 6.0 {
+                if (mouse - self.world_to_screen(start)).length() < 6.0 {
                     let w = self.screen_to_world(mouse);
                     // Hva er under markoren?
                     let mut hit_unit: Option<usize> = None;
@@ -1909,7 +1928,7 @@ impl Game {
                         self.sidebar_open = false;
                     }
                 } else {
-                    let a = self.screen_to_world(start);
+                    let a = start; // allerede verdens-koordinat
                     let b = self.screen_to_world(mouse);
                     let min = a.min(b);
                     let max = a.max(b);
@@ -3056,9 +3075,12 @@ impl Game {
         }
 
         if let Some(start) = self.drag_start {
+            // start er verdens-koordinat -> tegn fra dens skjermposisjon (flytter
+            // seg nar kameraet panorerer, sa boksen folger kartpunktet).
+            let s = self.world_to_screen(start);
             let (mx, my) = mouse_position();
-            let min = start.min(vec2(mx, my));
-            let max = start.max(vec2(mx, my));
+            let min = s.min(vec2(mx, my));
+            let max = s.max(vec2(mx, my));
             let size = max - min;
             if size.length() > 6.0 {
                 draw_rectangle(min.x, min.y, size.x, size.y, Color::new(0.2, 0.9, 0.2, 0.10));
@@ -3531,6 +3553,12 @@ impl Game {
     }
 
     fn draw_minimap_at(&self, mm: Rect) {
+        self.draw_minimap_inner(mm, false);
+    }
+
+    // `full` = vis hele kartet uten take og alle enheter (brukt av kart-preview);
+    // ellers vanlig minikart med take + kun synlige fiender + kamera-utsnitt.
+    fn draw_minimap_inner(&self, mm: Rect, full: bool) {
         let map_px = vec2(MAP_W as f32 * TILE, MAP_H as f32 * TILE);
         draw_rectangle(mm.x - 2.0, mm.y - 2.0, mm.w + 4.0, mm.h + 4.0, BLACK);
         let sx = mm.w / MAP_W as f32;
@@ -3538,39 +3566,101 @@ impl Game {
         for ty in 0..MAP_H {
             for tx in 0..MAP_W {
                 let idx = ty * MAP_W + tx;
-                if !self.explored[idx] {
+                if !full && !self.explored[idx] {
                     continue;
                 }
                 let mut c = self.map[idx].color(tx, ty);
-                if !self.visible[idx] {
+                if !full && !self.visible[idx] {
                     c = Color::new(c.r * 0.55, c.g * 0.55, c.b * 0.55, 1.0);
                 }
                 draw_rectangle(mm.x + tx as f32 * sx, mm.y + ty as f32 * sy, sx + 0.6, sy + 0.6, c);
             }
         }
+        let br = (sx * 0.55).max(3.5); // prikk-storrelse skalerer med oppløsning
+        let ur = (sx * 0.40).max(2.0);
         for b in &self.buildings {
-            if b.team != TEAM_PLAYER && !self.tile_visible(b.pos) {
+            if !full && b.team != TEAM_PLAYER && !self.tile_visible(b.pos) {
                 continue;
             }
             let mx = mm.x + (b.pos.x / map_px.x) * mm.w;
             let my = mm.y + (b.pos.y / map_px.y) * mm.h;
-            draw_rectangle(mx - 1.5, my - 1.5, 3.5, 3.5, team_color(b.team));
+            draw_rectangle(mx - br * 0.5, my - br * 0.5, br, br, team_color(b.team));
         }
         for u in &self.units {
-            if u.team != TEAM_PLAYER && !self.tile_visible(u.pos) {
+            if !full && u.team != TEAM_PLAYER && !self.tile_visible(u.pos) {
                 continue;
             }
             let mx = mm.x + (u.pos.x / map_px.x) * mm.w;
             let my = mm.y + (u.pos.y / map_px.y) * mm.h;
-            draw_rectangle(mx - 1.0, my - 1.0, 2.0, 2.0, team_color(u.team));
+            draw_rectangle(mx - ur * 0.5, my - ur * 0.5, ur, ur, team_color(u.team));
         }
-        // synlig kamera-utsnitt
-        let view = vec2(self.play_w(), screen_height()) / self.zoom;
-        let vx = mm.x + (self.cam.x / map_px.x) * mm.w;
-        let vy = mm.y + (self.cam.y / map_px.y) * mm.h;
-        let vw = (view.x / map_px.x) * mm.w;
-        let vh = (view.y / map_px.y) * mm.h;
-        draw_rectangle_lines(vx, vy, vw, vh, 1.5, WHITE);
+        if !full {
+            // synlig kamera-utsnitt
+            let view = vec2(self.play_w(), screen_height()) / self.zoom;
+            let vx = mm.x + (self.cam.x / map_px.x) * mm.w;
+            let vy = mm.y + (self.cam.y / map_px.y) * mm.h;
+            let vw = (view.x / map_px.x) * mm.w;
+            let vh = (view.y / map_px.y) * mm.h;
+            draw_rectangle_lines(vx, vy, vw, vh, 1.5, WHITE);
+        }
+    }
+
+    // Tikk den levende kart-previewen bak nivavelgeren. Hover over en nivaknapp
+    // bytter niva; simuleringen kjorer ~10 s og looper. Lyd dempes.
+    pub(crate) fn update_preview(&mut self, dt: f32) {
+        if self.screen != Screen::Start {
+            self.preview = None;
+            return;
+        }
+        // Hvilket niva? Det man holder over, ellers det forrige (start: niva 1).
+        let (mx, my) = mouse_position();
+        let m = vec2(mx, my);
+        let mut target = self.preview_level.min(self.max_unlocked);
+        for i in 0..(self.max_unlocked + 1).min(levels::count()) {
+            if self.menu_level_rect(i).contains(m) {
+                target = i;
+                break;
+            }
+        }
+        let need_new = self.preview.as_ref().map_or(true, |_| self.preview_level != target);
+        if need_new {
+            self.preview_level = target;
+            self.preview_time = 0.0;
+            let mut g = Box::new(Game::new_level(target));
+            g.reveal = true; // vis hele kartet i preview
+            self.preview = Some(g);
+        }
+        // Tikk simuleringen (lydlost), loop hver 10 s.
+        let was_muted = bridge::is_muted();
+        bridge::set_muted(true);
+        if let Some(g) = self.preview.as_mut() {
+            g.update(dt);
+        }
+        self.preview_time += dt;
+        if self.preview_time > 10.0 {
+            let mut ng = Box::new(Game::new_level(self.preview_level));
+            ng.reveal = true;
+            self.preview = Some(ng);
+            self.preview_time = 0.0;
+        }
+        bridge::set_muted(was_muted);
+    }
+
+    pub(crate) fn draw_preview_bg(&self) {
+        if let Some(g) = self.preview.as_ref() {
+            // Dekk skjermen med riktig sideforhold (kan beskjaeres i kantene).
+            let aspect = MAP_W as f32 / MAP_H as f32;
+            let (sw, sh) = (screen_width(), screen_height());
+            let (mut w, mut h) = (sw, sw / aspect);
+            if h < sh {
+                h = sh;
+                w = sh * aspect;
+            }
+            let r = Rect::new((sw - w) * 0.5, (sh - h) * 0.5, w, h);
+            g.draw_minimap_inner(r, true);
+            // Dempende slor sa menyteksten er lesbar.
+            draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.04, 0.05, 0.07, 0.62));
+        }
     }
 
     fn draw_hud(&self) {
@@ -3656,6 +3746,9 @@ async fn main() {
             if game.rally_show > 0.0 {
                 game.rally_show -= dt;
             }
+        } else {
+            // Levende kart-preview bak nivavelgeren.
+            game.update_preview(dt);
         }
         game.draw();
 
