@@ -883,28 +883,30 @@ impl Game {
         let panel = self.lang_panel_rect();
         let content = self.lang_content_rect();
         let max = self.lang_max_scroll();
-        let step = content.h * 0.8; // ett "blad" per pil-trykk
+        let step = content.h * 0.8; // ca ett "blad" per pil-trykk / hjul-impuls
+        let dt = get_frame_time().clamp(1.0 / 240.0, 1.0 / 20.0);
         let pressed = is_mouse_button_pressed(MouseButton::Left);
         let down = is_mouse_button_down(MouseButton::Left);
         let released = is_mouse_button_released(MouseButton::Left);
         let (_, wy) = mouse_wheel();
         if wy != 0.0 && panel.contains(m) {
-            self.lang_scroll = (self.lang_scroll - wy * 30.0).clamp(0.0, max);
+            self.lang_scroll_vel -= wy * 1100.0; // hjul gir mykt glidende impuls
         }
         if pressed {
-            // Pil opp / ned -> bla lista.
+            // Pil opp / ned -> mykt "blad" (gir hastighet, glir og stopper mykt).
             if self.lang_up_btn().contains(m) {
-                self.lang_scroll = (self.lang_scroll - step).clamp(0.0, max);
+                self.lang_scroll_vel = -step * 6.5;
                 self.ui_block = true;
                 return;
             }
             if self.lang_down_btn().contains(m) {
-                self.lang_scroll = (self.lang_scroll + step).clamp(0.0, max);
+                self.lang_scroll_vel = step * 6.5;
                 self.ui_block = true;
                 return;
             }
             if panel.contains(m) {
                 self.lang_dragging = false;
+                self.lang_scroll_vel = 0.0; // trykk pa lista stopper momentum
                 // Velg kun nar trykket STARTET inne i rull-omradet. Apne-trykket
                 // (pa "Language"-knappen, som kan ligge oppa lista pa smal skjerm)
                 // sees ikke her, sa det velger ikke ved et slipp -> lista blir apen.
@@ -916,13 +918,17 @@ impl Game {
                 return;
             }
         }
+        let dragging_now = down && self.lang_dragging;
         if down && content.contains(m) {
             let dy = m.y - self.last_mouse.y;
             if (m - self.ui_press).length() > 6.0 {
                 self.lang_dragging = true;
             }
             if self.lang_dragging {
+                // 1:1 glatt drag + spor hastighet for momentum ved slipp.
                 self.lang_scroll = (self.lang_scroll - dy).clamp(0.0, max);
+                let inst = -dy / dt;
+                self.lang_scroll_vel = self.lang_scroll_vel * 0.4 + inst * 0.6;
             }
             self.ui_block = true;
         }
@@ -938,6 +944,17 @@ impl Game {
                 self.ui_block = true;
             }
             self.lang_press_in = false;
+        }
+        // Treghet: glir videre og toner mykt ut nar man ikke drar aktivt.
+        if !dragging_now && self.lang_scroll_vel.abs() > 1.0 {
+            self.lang_scroll = (self.lang_scroll + self.lang_scroll_vel * dt).clamp(0.0, max);
+            if self.lang_scroll <= 0.0 || self.lang_scroll >= max {
+                self.lang_scroll_vel = 0.0; // mykt mot enden
+            }
+            self.lang_scroll_vel *= 0.0009f32.powf(dt); // eksponentiell friksjon
+            if self.lang_scroll_vel.abs() < 12.0 {
+                self.lang_scroll_vel = 0.0;
+            }
         }
     }
 
