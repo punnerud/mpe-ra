@@ -3586,23 +3586,24 @@ impl Game {
             return;
         }
         let mm = self.nav_minimap_rect();
-        let a = (self.nav_show / 0.4).clamp(0.0, 1.0); // ton raskt ut nar man slutter a navigere
+        // Myk uttoning over de siste 0.8 s (smoothstep -> ikke bratt).
+        let f = (self.nav_show / 0.8).clamp(0.0, 1.0);
+        let a = f * f * (3.0 - 2.0 * f);
         draw_rectangle(mm.x - 4.0, mm.y - 4.0, mm.w + 8.0, mm.h + 8.0, Color::new(0.05, 0.06, 0.07, 0.82 * a));
         draw_rectangle_lines(mm.x - 4.0, mm.y - 4.0, mm.w + 8.0, mm.h + 8.0, 1.5, Color::new(0.30, 0.55, 0.40, 0.9 * a));
-        self.draw_minimap_at(mm);
+        self.draw_minimap_inner(mm, false, true, a); // innhold toner med
     }
 
     fn draw_minimap_at(&self, mm: Rect) {
-        self.draw_minimap_inner(mm, false, true);
+        self.draw_minimap_inner(mm, false, true, 1.0);
     }
 
     // `reveal_all` = ignorer take (kun dev/reveal). `show_viewport` = tegn kamera-
-    // utsnittet. Kart-previewen bruker take (reveal_all=false) sa man IKKE ser
-    // fiendebasen, og uten kamera-rute.
-    fn draw_minimap_inner(&self, mm: Rect, reveal_all: bool, show_viewport: bool) {
+    // utsnittet. `alpha` toner hele innholdet (myk uttoning av flytende minikart).
+    fn draw_minimap_inner(&self, mm: Rect, reveal_all: bool, show_viewport: bool, alpha: f32) {
         let full = reveal_all || self.reveal;
         let map_px = vec2(MAP_W as f32 * TILE, MAP_H as f32 * TILE);
-        draw_rectangle(mm.x - 2.0, mm.y - 2.0, mm.w + 4.0, mm.h + 4.0, BLACK);
+        draw_rectangle(mm.x - 2.0, mm.y - 2.0, mm.w + 4.0, mm.h + 4.0, Color::new(0.0, 0.0, 0.0, alpha));
         let sx = mm.w / MAP_W as f32;
         let sy = mm.h / MAP_H as f32;
         for ty in 0..MAP_H {
@@ -3615,6 +3616,7 @@ impl Game {
                 if !full && !self.visible[idx] {
                     c = Color::new(c.r * 0.55, c.g * 0.55, c.b * 0.55, 1.0);
                 }
+                c.a *= alpha;
                 draw_rectangle(mm.x + tx as f32 * sx, mm.y + ty as f32 * sy, sx + 0.6, sy + 0.6, c);
             }
         }
@@ -3626,7 +3628,9 @@ impl Game {
             }
             let mx = mm.x + (b.pos.x / map_px.x) * mm.w;
             let my = mm.y + (b.pos.y / map_px.y) * mm.h;
-            draw_rectangle(mx - br * 0.5, my - br * 0.5, br, br, team_color(b.team));
+            let mut c = team_color(b.team);
+            c.a *= alpha;
+            draw_rectangle(mx - br * 0.5, my - br * 0.5, br, br, c);
         }
         for u in &self.units {
             if !full && u.team != TEAM_PLAYER && !self.tile_visible(u.pos) {
@@ -3634,7 +3638,9 @@ impl Game {
             }
             let mx = mm.x + (u.pos.x / map_px.x) * mm.w;
             let my = mm.y + (u.pos.y / map_px.y) * mm.h;
-            draw_rectangle(mx - ur * 0.5, my - ur * 0.5, ur, ur, team_color(u.team));
+            let mut c = team_color(u.team);
+            c.a *= alpha;
+            draw_rectangle(mx - ur * 0.5, my - ur * 0.5, ur, ur, c);
         }
         if show_viewport {
             // synlig kamera-utsnitt
@@ -3643,7 +3649,7 @@ impl Game {
             let vy = mm.y + (self.cam.y / map_px.y) * mm.h;
             let vw = (view.x / map_px.x) * mm.w;
             let vh = (view.y / map_px.y) * mm.h;
-            draw_rectangle_lines(vx, vy, vw, vh, 1.5, WHITE);
+            draw_rectangle_lines(vx, vy, vw, vh, 1.5, Color::new(1.0, 1.0, 1.0, alpha));
         }
     }
 
@@ -3703,7 +3709,7 @@ impl Game {
             let r = Rect::new(sw * 0.5 - fx * w, sh * 0.5 - fy * h, w, h);
             // Take pa (reveal_all=false) -> kun var base/utforsket, fiendebasen
             // forblir svart. Ingen kamera-rute.
-            g.draw_minimap_inner(r, false, false);
+            g.draw_minimap_inner(r, false, false, 1.0);
             // Dempende slor sa menyteksten er lesbar.
             draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.04, 0.05, 0.07, 0.50));
         }
@@ -3781,9 +3787,10 @@ async fn main() {
             game.handle_keys();
             game.handle_selection();
             game.update(dt);
-            // Vis flytende minikart mens man navigerer + en kort hale (~1 s).
+            // Vis flytende minikart mens man navigerer: fullt synlig ~1.2 s etter
+            // siste bevegelse, deretter en myk uttoning (~0.8 s).
             if (game.cam - game.prev_cam).length() > 0.4 {
-                game.nav_show = 1.0;
+                game.nav_show = 2.0; // 1.2 s hold + 0.8 s fade
             }
             game.prev_cam = game.cam;
             if game.nav_show > 0.0 {
