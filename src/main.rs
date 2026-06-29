@@ -3553,12 +3553,14 @@ impl Game {
     }
 
     fn draw_minimap_at(&self, mm: Rect) {
-        self.draw_minimap_inner(mm, false);
+        self.draw_minimap_inner(mm, false, true);
     }
 
-    // `full` = vis hele kartet uten take og alle enheter (brukt av kart-preview);
-    // ellers vanlig minikart med take + kun synlige fiender + kamera-utsnitt.
-    fn draw_minimap_inner(&self, mm: Rect, full: bool) {
+    // `reveal_all` = ignorer take (kun dev/reveal). `show_viewport` = tegn kamera-
+    // utsnittet. Kart-previewen bruker take (reveal_all=false) sa man IKKE ser
+    // fiendebasen, og uten kamera-rute.
+    fn draw_minimap_inner(&self, mm: Rect, reveal_all: bool, show_viewport: bool) {
+        let full = reveal_all || self.reveal;
         let map_px = vec2(MAP_W as f32 * TILE, MAP_H as f32 * TILE);
         draw_rectangle(mm.x - 2.0, mm.y - 2.0, mm.w + 4.0, mm.h + 4.0, BLACK);
         let sx = mm.w / MAP_W as f32;
@@ -3594,7 +3596,7 @@ impl Game {
             let my = mm.y + (u.pos.y / map_px.y) * mm.h;
             draw_rectangle(mx - ur * 0.5, my - ur * 0.5, ur, ur, team_color(u.team));
         }
-        if !full {
+        if show_viewport {
             // synlig kamera-utsnitt
             let view = vec2(self.play_w(), screen_height()) / self.zoom;
             let vx = mm.x + (self.cam.x / map_px.x) * mm.w;
@@ -3626,9 +3628,7 @@ impl Game {
         if need_new {
             self.preview_level = target;
             self.preview_time = 0.0;
-            let mut g = Box::new(Game::new_level(target));
-            g.reveal = true; // vis hele kartet i preview
-            self.preview = Some(g);
+            self.preview = Some(Box::new(Game::new_level(target)));
         }
         // Tikk simuleringen (lydlost), loop hver 10 s.
         let was_muted = bridge::is_muted();
@@ -3638,9 +3638,7 @@ impl Game {
         }
         self.preview_time += dt;
         if self.preview_time > 10.0 {
-            let mut ng = Box::new(Game::new_level(self.preview_level));
-            ng.reveal = true;
-            self.preview = Some(ng);
+            self.preview = Some(Box::new(Game::new_level(self.preview_level)));
             self.preview_time = 0.0;
         }
         bridge::set_muted(was_muted);
@@ -3657,9 +3655,11 @@ impl Game {
                 w = sh * aspect;
             }
             let r = Rect::new((sw - w) * 0.5, (sh - h) * 0.5, w, h);
-            g.draw_minimap_inner(r, true);
+            // Take pa (reveal_all=false) -> kun var base/utforsket, fiendebasen
+            // forblir svart. Ingen kamera-rute.
+            g.draw_minimap_inner(r, false, false);
             // Dempende slor sa menyteksten er lesbar.
-            draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.04, 0.05, 0.07, 0.62));
+            draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.04, 0.05, 0.07, 0.50));
         }
     }
 
