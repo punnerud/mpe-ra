@@ -869,6 +869,7 @@ struct Game {
     nav_show: f32,         // nedtelling: vis flytende minikart mens man navigerer
     prev_cam: Vec2,        // forrige frames kamera (for a oppdage navigering)
     rally_show: f32,       // nedtelling: vis samlepunkt-flagget etter at det ble satt
+    move_marker: Option<(Vec2, f32)>, // (verdens-punkt, nedtelling) der enheter ble sendt
     confirm_level: Option<usize>, // nivameny: avventer bekreftelse for bytte (mister data)
     touch_device: bool,    // har sett touch-input -> sla av kant-scroll (mobil)
     settings_open: bool,   // settings-panel (lyd/pause) over burgeren er apent
@@ -1017,6 +1018,7 @@ impl Game {
             nav_show: 0.0,
             prev_cam: Vec2::ZERO,
             rally_show: 0.0,
+            move_marker: None,
             confirm_level: None,
             touch_device: false,
             settings_open: false,
@@ -1707,6 +1709,7 @@ impl Game {
         if selected.is_empty() {
             return;
         }
+        self.move_marker = Some((dest, 0.8)); // vis "kjor hit"-merke en kort stund
         let blocked = self.compute_blocked();
         let n = selected.len();
         if n == 1 {
@@ -3034,6 +3037,17 @@ impl Game {
             txt(self.t(Key::RallyPoint), r.x + 6.0, r.y + 16.0, 15.0, g);
         }
 
+        // "Kjor hit"-merke der enheter ble sendt: grønt kryss + pulserende ring.
+        if let Some((p, t)) = self.move_marker {
+            let s = self.world_to_screen(p);
+            let a = (t / 0.8).clamp(0.0, 1.0);
+            let col = Color::new(0.30, 0.95, 0.40, a);
+            draw_circle_lines(s.x, s.y, 4.0 + (1.0 - a) * 14.0, 2.0, col); // ring vokser utover mens den toner ut
+            let c = 7.0;
+            draw_line(s.x - c, s.y, s.x + c, s.y, 2.0, col);
+            draw_line(s.x, s.y - c, s.x, s.y + c, 2.0, col);
+        }
+
         // Bygninger (fiendens kun nar synlig).
         for b in &self.buildings {
             if b.team != TEAM_PLAYER && !self.tile_visible(b.pos) {
@@ -3751,6 +3765,12 @@ async fn main() {
             }
             if game.rally_show > 0.0 {
                 game.rally_show -= dt;
+            }
+            if let Some((_, t)) = &mut game.move_marker {
+                *t -= dt;
+                if *t <= 0.0 {
+                    game.move_marker = None;
+                }
             }
         } else {
             // Levende kart-preview bak nivavelgeren.
