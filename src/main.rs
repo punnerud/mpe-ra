@@ -863,6 +863,7 @@ struct Game {
     lang_dragging: bool, // ruller spraklista med fingeren
     lang_press_in: bool, // trykket startet inne i spraklista (kreves for a velge)
     lang_scroll_vel: f32, // rull-hastighet (px/s) for glatt treghet/momentum
+    box_select: bool,     // venstre-dra har passert klikk-terskel -> ekte boks-markering
     ui_init: bool,    // forste-frame-oppsett gjort (sidebar-standard etter skjerm)
     // --- Skjerm / meny ---
     screen: Screen,        // Start (nivameny) / Guide / Playing
@@ -1015,6 +1016,7 @@ impl Game {
             lang_dragging: false,
             lang_press_in: false,
             lang_scroll_vel: 0.0,
+            box_select: false,
             ui_init: false,
             screen: Screen::Start,
             max_unlocked: 0,
@@ -1492,15 +1494,18 @@ impl Game {
 
         let inside = mx >= 0.0 && my >= 0.0 && mx <= screen_width() && my <= screen_height();
         // Pa touch er kant-scroll normalt AV (for sensitivt), MEN nar man drar en
-        // markering skal kartet folge med mot kanten sa man kan markere et storre
-        // omrade enn skjermen. (Markeringen er forankret til kartet, sa boksen
-        // vokser riktig nar kameraet panorerer.)
-        let drag_selecting = self.drag_start.is_some() && is_mouse_button_down(MouseButton::Left);
+        // EKTE markeringsboks skal kartet folge med mot kanten sa man kan markere
+        // et storre omrade enn skjermen. Et rent trykk (ventende klikk/flytt-
+        // kommando) skal IKKE scrolle -- da ville flyttet ikke registreres.
+        let lmb = is_mouse_button_down(MouseButton::Left);
+        let box_dragging = self.box_select && lmb;
+        let pending_click = lmb && self.drag_start.is_some() && !self.box_select;
         // Ikke kant-scroll nar pekeren er over en kontroll/meny (ellers drifter
         // kartet nar man trykker zoom/burger i hjornet) -- og ikke nar den apne
         // byggmenyen ligger under pekeren (man skal kunne velge i menyen i ro).
         if self.mouse_active
-            && (!self.touch_device || drag_selecting)
+            && (!self.touch_device || box_dragging)
+            && !pending_click
             && inside
             && !self.joy_active
             && !self.point_in_ui(mouse)
@@ -1883,9 +1888,21 @@ impl Game {
             // Lagre i VERDENS-koordinat -> boksen forankres til kartet og dekker
             // stadig storre omrade nar kameraet panorerer under draget.
             self.drag_start = Some(self.screen_to_world(mouse));
+            self.box_select = false;
+        }
+        // Ekte boks-markering forst nar draget har passert klikk-terskelen. Da
+        // (og kun da) far kant-scroll lov a panorere under draget. Et rent trykk
+        // forblir et trykk (flytt-kommando), selv naer kanten.
+        if is_mouse_button_down(MouseButton::Left) {
+            if let Some(start) = self.drag_start {
+                if (mouse - self.world_to_screen(start)).length() > 8.0 {
+                    self.box_select = true;
+                }
+            }
         }
 
         if is_mouse_button_released(MouseButton::Left) {
+            self.box_select = false;
             if let Some(start) = self.drag_start.take() {
                 if (mouse - self.world_to_screen(start)).length() < 6.0 {
                     let w = self.screen_to_world(mouse);

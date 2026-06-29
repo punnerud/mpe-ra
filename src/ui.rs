@@ -100,7 +100,8 @@ impl Game {
     fn ui_bottom_btn(&self, col: usize) -> Rect {
         let x = self.play_w() + 8.0;
         let third = (SIDEBAR_W - 16.0 - 8.0) / 3.0;
-        Rect::new(x + col as f32 * (third + 4.0), screen_height() - 30.0 - self.safe_bottom(), third, 24.0)
+        // Lav stripe: ca halv hoyde, plassert lenger ned (rett over trygg sone).
+        Rect::new(x + col as f32 * (third + 4.0), screen_height() - 18.0 - self.safe_bottom(), third, 14.0)
     }
     fn ui_dev_btn(&self) -> Rect {
         self.ui_bottom_btn(0)
@@ -731,15 +732,15 @@ impl Game {
             // X for a lukke menyen, oppe til hoyre ved "BUILD".
             let cl = self.ui_sidebar_close();
             btn(cl, cl.contains(m), "X", 16.0, false);
-            let strip_y = screen_height() - 36.0 - self.safe_bottom();
-            draw_rectangle(self.play_w(), strip_y, SIDEBAR_W, 36.0 + self.safe_bottom(), Color::new(0.08, 0.09, 0.10, 1.0));
+            let strip_y = screen_height() - 22.0 - self.safe_bottom();
+            draw_rectangle(self.play_w(), strip_y, SIDEBAR_W, 22.0 + self.safe_bottom(), Color::new(0.08, 0.09, 0.10, 1.0));
             let dv = self.ui_dev_btn();
-            btn(dv, dv.contains(m), "Dev", 14.0, self.dev_open);
+            btn(dv, dv.contains(m), "Dev", 12.0, self.dev_open);
             let lg = self.ui_lang_btn();
             let iso = i18n::LANGS[i18n::index_of(self.lang)].1.to_uppercase();
-            btn(lg, lg.contains(m), &iso, 14.0, self.lang_open);
+            btn(lg, lg.contains(m), &iso, 12.0, self.lang_open);
             let lv = self.ui_level_btn();
-            btn(lv, lv.contains(m), self.t(Key::LevelMenuBtn), 13.0, false);
+            btn(lv, lv.contains(m), self.t(Key::LevelMenuBtn), 11.0, false);
         }
 
         // Joystick
