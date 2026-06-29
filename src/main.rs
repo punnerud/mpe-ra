@@ -1487,11 +1487,16 @@ impl Game {
         }
 
         let inside = mx >= 0.0 && my >= 0.0 && mx <= screen_width() && my <= screen_height();
+        // Pa touch er kant-scroll normalt AV (for sensitivt), MEN nar man drar en
+        // markering skal kartet folge med mot kanten sa man kan markere et storre
+        // omrade enn skjermen. (Markeringen er forankret til kartet, sa boksen
+        // vokser riktig nar kameraet panorerer.)
+        let drag_selecting = self.drag_start.is_some() && is_mouse_button_down(MouseButton::Left);
         // Ikke kant-scroll nar pekeren er over en kontroll/meny (ellers drifter
         // kartet nar man trykker zoom/burger i hjornet) -- og ikke nar den apne
         // byggmenyen ligger under pekeren (man skal kunne velge i menyen i ro).
         if self.mouse_active
-            && !self.touch_device
+            && (!self.touch_device || drag_selecting)
             && inside
             && !self.joy_active
             && !self.point_in_ui(mouse)
