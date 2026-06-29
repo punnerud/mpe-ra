@@ -3646,15 +3646,21 @@ impl Game {
 
     pub(crate) fn draw_preview_bg(&self) {
         if let Some(g) = self.preview.as_ref() {
-            // Dekk skjermen med riktig sideforhold (kan beskjaeres i kantene).
             let aspect = MAP_W as f32 / MAP_H as f32;
             let (sw, sh) = (screen_width(), screen_height());
-            let (mut w, mut h) = (sw, sw / aspect);
-            if h < sh {
-                h = sh;
-                w = sh * aspect;
+            // Litt innzoomet sa basen fyller mer (dekker minst skjermen).
+            let mut w = sw * 1.25;
+            let mut h = w / aspect;
+            if h < sh * 1.25 {
+                h = sh * 1.25;
+                w = h * aspect;
             }
-            let r = Rect::new((sw - w) * 0.5, (sh - h) * 0.5, w, h);
+            // Sentrer pa spillerbasen (forskyv rekta sa basen havner i midten).
+            let base = levels::get(self.preview_level).player_base;
+            let map_px = vec2(MAP_W as f32 * TILE, MAP_H as f32 * TILE);
+            let fx = base.0 as f32 * TILE / map_px.x;
+            let fy = base.1 as f32 * TILE / map_px.y;
+            let r = Rect::new(sw * 0.5 - fx * w, sh * 0.5 - fy * h, w, h);
             // Take pa (reveal_all=false) -> kun var base/utforsket, fiendebasen
             // forblir svart. Ingen kamera-rute.
             g.draw_minimap_inner(r, false, false);
