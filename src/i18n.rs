@@ -135,6 +135,11 @@ pub enum Key {
     DevVisible,
     DevTiles,
     DevEnemyShort,
+    DevWarn,
+    DevAccept,
+    DevCancel,
+    Cheater,
+    DevFps,
 }
 
 pub const ALL_KEYS: &[Key] = &[
@@ -203,6 +208,11 @@ pub const ALL_KEYS: &[Key] = &[
     Key::DevVisible,
     Key::DevTiles,
     Key::DevEnemyShort,
+    Key::DevWarn,
+    Key::DevAccept,
+    Key::DevCancel,
+    Key::Cheater,
+    Key::DevFps,
 ];
 
 /// Hovedoppslag: oversettelse for (sprak, nokkel) med engelsk fallback.
@@ -373,6 +383,11 @@ fn en(k: Key) -> &'static str {
         Key::DevVisible => "visible",
         Key::DevTiles => "tiles",
         Key::DevEnemyShort => "enemy",
+        Key::DevWarn => "Dev mode lets you cheat. Enable it?",
+        Key::DevAccept => "Enable",
+        Key::DevCancel => "Cancel",
+        Key::Cheater => "Cheater",
+        Key::DevFps => "FPS",
     }
 }
 
@@ -443,6 +458,11 @@ fn no(k: Key) -> &'static str {
         Key::DevVisible => "synlig",
         Key::DevTiles => "ruter",
         Key::DevEnemyShort => "fi",
+        Key::DevWarn => "Dev-modus lar deg jukse. Aktivere?",
+        Key::DevAccept => "Aktiver",
+        Key::DevCancel => "Avbryt",
+        Key::Cheater => "Juksemaker",
+        Key::DevFps => "FPS",
     }
 }
 
@@ -513,6 +533,11 @@ fn sv(k: Key) -> &'static str {
         Key::DevVisible => "synligt",
         Key::DevTiles => "rutor",
         Key::DevEnemyShort => "fiende",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -583,6 +608,11 @@ fn da(k: Key) -> &'static str {
         Key::DevVisible => "synlig",
         Key::DevTiles => "felter",
         Key::DevEnemyShort => "fjende",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -653,6 +683,11 @@ fn de(k: Key) -> &'static str {
         Key::DevVisible => "sichtbar",
         Key::DevTiles => "Felder",
         Key::DevEnemyShort => "Feind",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -723,6 +758,11 @@ fn nl(k: Key) -> &'static str {
         Key::DevVisible => "zichtbaar",
         Key::DevTiles => "tegels",
         Key::DevEnemyShort => "vijand",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -793,6 +833,11 @@ fn fr(k: Key) -> &'static str {
         Key::DevVisible => "visible",
         Key::DevTiles => "tuiles",
         Key::DevEnemyShort => "ennemi",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -863,6 +908,11 @@ fn es(k: Key) -> &'static str {
         Key::DevVisible => "visible",
         Key::DevTiles => "casillas",
         Key::DevEnemyShort => "enemigo",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -933,6 +983,11 @@ fn es_mx(k: Key) -> &'static str {
         Key::DevVisible => "visible",
         Key::DevTiles => "casillas",
         Key::DevEnemyShort => "enemigo",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -1003,6 +1058,11 @@ fn pt(k: Key) -> &'static str {
         Key::DevVisible => "visível",
         Key::DevTiles => "células",
         Key::DevEnemyShort => "inimigo",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -1073,6 +1133,11 @@ fn pt_br(k: Key) -> &'static str {
         Key::DevVisible => "visível",
         Key::DevTiles => "células",
         Key::DevEnemyShort => "inimigo",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -1143,6 +1208,11 @@ fn it(k: Key) -> &'static str {
         Key::DevVisible => "visibile",
         Key::DevTiles => "celle",
         Key::DevEnemyShort => "nemico",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -1213,6 +1283,11 @@ fn el(k: Key) -> &'static str {
         Key::DevVisible => "ορατό",
         Key::DevTiles => "πλακίδια",
         Key::DevEnemyShort => "εχθρός",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -1283,6 +1358,11 @@ fn fi(k: Key) -> &'static str {
         Key::DevVisible => "näkyvä",
         Key::DevTiles => "ruudut",
         Key::DevEnemyShort => "vihollinen",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -1353,6 +1433,11 @@ fn pl(k: Key) -> &'static str {
         Key::DevVisible => "widoczne",
         Key::DevTiles => "pola",
         Key::DevEnemyShort => "wróg",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -1423,6 +1508,11 @@ fn cs(k: Key) -> &'static str {
         Key::DevVisible => "viditelné",
         Key::DevTiles => "dlaždice",
         Key::DevEnemyShort => "nepřítel",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -1493,6 +1583,11 @@ fn sk(k: Key) -> &'static str {
         Key::DevVisible => "viditeľné",
         Key::DevTiles => "dlaždice",
         Key::DevEnemyShort => "nepriateľ",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -1563,6 +1658,11 @@ fn hu(k: Key) -> &'static str {
         Key::DevVisible => "látható",
         Key::DevTiles => "mezők",
         Key::DevEnemyShort => "ellenség",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -1633,6 +1733,11 @@ fn ro(k: Key) -> &'static str {
         Key::DevVisible => "vizibil",
         Key::DevTiles => "dale",
         Key::DevEnemyShort => "inamic",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -1703,6 +1808,11 @@ fn hr(k: Key) -> &'static str {
         Key::DevVisible => "vidljivo",
         Key::DevTiles => "polja",
         Key::DevEnemyShort => "neprijatelj",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -1773,6 +1883,11 @@ fn sl(k: Key) -> &'static str {
         Key::DevVisible => "vidno",
         Key::DevTiles => "ploščice",
         Key::DevEnemyShort => "sovražnik",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -1843,6 +1958,11 @@ fn bg(k: Key) -> &'static str {
         Key::DevVisible => "видимо",
         Key::DevTiles => "плочки",
         Key::DevEnemyShort => "враг",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -1913,6 +2033,11 @@ fn uk(k: Key) -> &'static str {
         Key::DevVisible => "видимо",
         Key::DevTiles => "клітинки",
         Key::DevEnemyShort => "ворог",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -1983,6 +2108,11 @@ fn tr(k: Key) -> &'static str {
         Key::DevVisible => "görünür",
         Key::DevTiles => "kareler",
         Key::DevEnemyShort => "düşman",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -2053,6 +2183,11 @@ fn is(k: Key) -> &'static str {
         Key::DevVisible => "sýnilegt",
         Key::DevTiles => "reitir",
         Key::DevEnemyShort => "óvinur",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -2123,6 +2258,11 @@ fn et(k: Key) -> &'static str {
         Key::DevVisible => "nähtav",
         Key::DevTiles => "ruudud",
         Key::DevEnemyShort => "vaenlane",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -2193,6 +2333,11 @@ fn lv(k: Key) -> &'static str {
         Key::DevVisible => "redzams",
         Key::DevTiles => "rūtiņas",
         Key::DevEnemyShort => "ienaidnieks",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -2263,6 +2408,11 @@ fn lt(k: Key) -> &'static str {
         Key::DevVisible => "matoma",
         Key::DevTiles => "langeliai",
         Key::DevEnemyShort => "priešas",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -2333,6 +2483,11 @@ fn ga(k: Key) -> &'static str {
         Key::DevVisible => "infheicthe",
         Key::DevTiles => "tíleanna",
         Key::DevEnemyShort => "namhaid",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -2403,6 +2558,11 @@ fn ca(k: Key) -> &'static str {
         Key::DevVisible => "visible",
         Key::DevTiles => "caselles",
         Key::DevEnemyShort => "enemic",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -2473,6 +2633,11 @@ fn zh(k: Key) -> &'static str {
         Key::DevVisible => "可见",
         Key::DevTiles => "格",
         Key::DevEnemyShort => "敌方",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -2543,6 +2708,11 @@ fn zh_tw(k: Key) -> &'static str {
         Key::DevVisible => "可見",
         Key::DevTiles => "格",
         Key::DevEnemyShort => "敵方",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -2613,6 +2783,11 @@ fn ja(k: Key) -> &'static str {
         Key::DevVisible => "可視",
         Key::DevTiles => "タイル",
         Key::DevEnemyShort => "敵",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -2683,6 +2858,11 @@ fn ko(k: Key) -> &'static str {
         Key::DevVisible => "보임",
         Key::DevTiles => "타일",
         Key::DevEnemyShort => "적",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -2753,6 +2933,11 @@ fn hi(k: Key) -> &'static str {
         Key::DevVisible => "दृश्य",
         Key::DevTiles => "टाइलें",
         Key::DevEnemyShort => "शत्रु",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -2823,6 +3008,11 @@ fn th(k: Key) -> &'static str {
         Key::DevVisible => "มองเห็น",
         Key::DevTiles => "ช่อง",
         Key::DevEnemyShort => "ศัตรู",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -2893,6 +3083,11 @@ fn vi(k: Key) -> &'static str {
         Key::DevVisible => "nhìn thấy",
         Key::DevTiles => "ô",
         Key::DevEnemyShort => "địch",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -2963,6 +3158,11 @@ fn id(k: Key) -> &'static str {
         Key::DevVisible => "terlihat",
         Key::DevTiles => "petak",
         Key::DevEnemyShort => "musuh",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -3033,6 +3233,11 @@ fn ms(k: Key) -> &'static str {
         Key::DevVisible => "kelihatan",
         Key::DevTiles => "petak",
         Key::DevEnemyShort => "musuh",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -3103,6 +3308,11 @@ fn tl(k: Key) -> &'static str {
         Key::DevVisible => "nakikita",
         Key::DevTiles => "mga tile",
         Key::DevEnemyShort => "kaaway",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -3173,6 +3383,11 @@ fn bn(k: Key) -> &'static str {
         Key::DevVisible => "দৃশ্যমান",
         Key::DevTiles => "টাইল",
         Key::DevEnemyShort => "শত্রু",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -3243,6 +3458,11 @@ fn ar(k: Key) -> &'static str {
         Key::DevVisible => "المرئي",
         Key::DevTiles => "المربعات",
         Key::DevEnemyShort => "العدو",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -3313,6 +3533,11 @@ fn he(k: Key) -> &'static str {
         Key::DevVisible => "נראה",
         Key::DevTiles => "אריחים",
         Key::DevEnemyShort => "אויב",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 
@@ -3383,6 +3608,11 @@ fn fa(k: Key) -> &'static str {
         Key::DevVisible => "قابل‌مشاهده",
         Key::DevTiles => "کاشی‌ها",
         Key::DevEnemyShort => "دشمن",
+        Key::DevWarn => "",
+        Key::DevAccept => "",
+        Key::DevCancel => "",
+        Key::Cheater => "",
+        Key::DevFps => "",
     }
 }
 

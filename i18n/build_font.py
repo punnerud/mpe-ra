@@ -17,6 +17,7 @@ import subprocess
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STRINGS = os.path.join(ROOT, "i18n", "strings.csv")
+LANGS = os.path.join(ROOT, "i18n", "langs.csv")
 OUT = os.path.join(ROOT, "web", "font.ttf")
 
 # Kilde-font med bred Unicode-dekning. Bytt sti om du er på et annet system.
@@ -38,6 +39,14 @@ def main():
         for row in r:
             for cell in row[2:]:  # hopp over key + context
                 chars.update(cell)
+    # Innfodte + engelske spraknavn vises i den in-canvas sprakvelgeren (Rust),
+    # sa de glyfene ma ogsa med (japansk/kyrillisk/gresk/arabisk osv.).
+    if os.path.exists(LANGS):
+        with open(LANGS, encoding="utf-8") as f:
+            r = csv.DictReader(f)
+            for row in r:
+                chars.update(row.get("native", ""))
+                chars.update(row.get("english", ""))
     # ASCII printable (tall, $, bokstaver i kode-strenger: FPS, [PAUSE], WASD, x ...)
     chars.update(string.printable)
     chars = {c for c in chars if c.isprintable() or c == " "}

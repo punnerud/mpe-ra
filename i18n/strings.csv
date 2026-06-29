@@ -64,3 +64,8 @@ DevExplored,Dev readout label: explored,explored,utforsket,utforskat,udforsket,e
 DevVisible,Dev readout label: visible,visible,synlig,synligt,synlig,sichtbar,zichtbaar,visible,visible,visible,visível,visível,visibile,ορατό,näkyvä,widoczne,viditelné,viditeľné,látható,vizibil,vidljivo,vidno,видимо,видимо,görünür,sýnilegt,nähtav,redzams,matoma,infheicthe,visible,可见,可見,可視,보임,दृश्य,มองเห็น,nhìn thấy,terlihat,kelihatan,nakikita,দৃশ্যমান,المرئي,נראה,قابل‌مشاهده
 DevTiles,Dev readout label: tiles count,tiles,ruter,rutor,felter,Felder,tegels,tuiles,casillas,casillas,células,células,celle,πλακίδια,ruudut,pola,dlaždice,dlaždice,mezők,dale,polja,ploščice,плочки,клітинки,kareler,reitir,ruudud,rūtiņas,langeliai,tíleanna,caselles,格,格,タイル,타일,टाइलें,ช่อง,ô,petak,petak,mga tile,টাইল,المربعات,אריחים,کاشی‌ها
 DevEnemyShort,"Short word for enemy, used like '(enemy 5)'",enemy,fi,fiende,fjende,Feind,vijand,ennemi,enemigo,enemigo,inimigo,inimigo,nemico,εχθρός,vihollinen,wróg,nepřítel,nepriateľ,ellenség,inamic,neprijatelj,sovražnik,враг,ворог,düşman,óvinur,vaenlane,ienaidnieks,priešas,namhaid,enemic,敌方,敵方,敵,적,शत्रु,ศัตรู,địch,musuh,musuh,kaaway,শত্রু,العدو,אויב,دشمن
+DevWarn,Warning shown the first time Dev mode is opened.,Dev mode lets you cheat. Enable it?,Dev-modus lar deg jukse. Aktivere?,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+DevAccept,Confirm button to enable Dev mode.,Enable,Aktiver,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+DevCancel,Cancel button in a dialog.,Cancel,Avbryt,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Cheater,Badge shown after Dev mode has been used.,Cheater,Juksemaker,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+DevFps,Label for frames-per-second in the dev panel.,FPS,FPS,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
