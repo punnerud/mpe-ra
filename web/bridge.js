@@ -163,7 +163,7 @@
 
     // "Cheater"-merke nede til hoyre nar dev/juks er tatt i bruk.
     const cheatBadge = css(document.createElement("div"),
-        "position:fixed;bottom:10px;right:10px;z-index:1002;font:bold 13px system-ui,sans-serif;" +
+        "position:fixed;top:10px;right:10px;z-index:1002;font:bold 13px system-ui,sans-serif;" +
         "background:rgba(120,20,20,.85);color:#ffd;border:1px solid #e55;border-radius:6px;" +
         "padding:4px 9px;display:none;pointer-events:none;letter-spacing:.5px");
     cheatBadge.textContent = "Cheater";
@@ -315,9 +315,73 @@
         if (save) { try { localStorage.setItem("openra_lang", String(i)); } catch (e) {} }
     }
 
+    // ---- Mobilkontroller: kamera-joystick + zoom-knapper ----------------
+    // Joystick (nede til hoyre, Minecraft/Roblox-stil) panorerer kameraet.
+    // right:162px -> til venstre for sidebaren (150px) sa den ikke dekker
+    // byggknappene.
+    const joyBase = css(document.createElement("div"),
+        "position:fixed;bottom:24px;right:162px;z-index:1003;width:120px;height:120px;border-radius:50%;" +
+        "background:rgba(20,30,20,.35);border:2px solid rgba(120,200,120,.5);touch-action:none;" +
+        "user-select:none;-webkit-user-select:none");
+    const joyKnob = css(document.createElement("div"),
+        "position:absolute;left:50%;top:50%;width:52px;height:52px;border-radius:50%;" +
+        "transform:translate(-50%,-50%);background:rgba(120,200,120,.55);border:2px solid rgba(200,255,200,.7);" +
+        "pointer-events:none");
+    joyBase.appendChild(joyKnob);
+
+    let joyVec = { x: 0, y: 0 }, joyId = null, joyRAF = null;
+    const R = 46; // maks knott-utslag (px)
+    function joyUpdate(e) {
+        const r = joyBase.getBoundingClientRect();
+        let dx = e.clientX - (r.left + r.width / 2);
+        let dy = e.clientY - (r.top + r.height / 2);
+        const len = Math.hypot(dx, dy) || 1;
+        const cl = Math.min(len, R);
+        dx = dx / len * cl; dy = dy / len * cl;
+        joyKnob.style.transform = "translate(calc(-50% + " + dx + "px), calc(-50% + " + dy + "px))";
+        joyVec = { x: dx / R, y: dy / R };
+    }
+    function joyLoop() {
+        if (joyId === null) return;
+        const s = openra.state;
+        if (s && s.cam) {
+            const zoom = s.zoom || 1;
+            const PAN = 16 / zoom; // verdens-piksler pr. frame ved fullt utslag
+            openra.setCam(Math.round(s.cam.x + joyVec.x * PAN * zoom), Math.round(s.cam.y + joyVec.y * PAN * zoom));
+        }
+        joyRAF = requestAnimationFrame(joyLoop);
+    }
+    joyBase.addEventListener("pointerdown", (e) => {
+        joyId = e.pointerId; joyBase.setPointerCapture(joyId);
+        joyUpdate(e); if (joyRAF === null) joyLoop(); e.preventDefault();
+    });
+    joyBase.addEventListener("pointermove", (e) => { if (e.pointerId === joyId) joyUpdate(e); });
+    const joyEnd = (e) => {
+        if (e.pointerId !== joyId) return;
+        joyId = null; if (joyRAF) cancelAnimationFrame(joyRAF); joyRAF = null;
+        joyVec = { x: 0, y: 0 }; joyKnob.style.transform = "translate(-50%,-50%)";
+    };
+    joyBase.addEventListener("pointerup", joyEnd);
+    joyBase.addEventListener("pointercancel", joyEnd);
+
+    // Zoom +/- (oppe til venstre, under HUD-linjen).
+    const zoomWrap = css(document.createElement("div"),
+        "position:fixed;top:38px;left:10px;z-index:1003;display:flex;flex-direction:column;gap:4px");
+    const zoomBtn = (txt, fn) => {
+        const b = css(document.createElement("button"),
+            "width:34px;height:34px;font:bold 20px system-ui,sans-serif;cursor:pointer;" +
+            "background:rgba(20,30,20,.8);color:#cfe;border:1px solid #2a4;border-radius:7px;touch-action:manipulation");
+        b.textContent = txt; b.onclick = fn; return b;
+    };
+    const curZoom = () => (openra.state && openra.state.zoom) ? openra.state.zoom : 1;
+    zoomWrap.append(
+        zoomBtn("+", () => openra.setZoom(Math.min(3.0, curZoom() * 1.25))),
+        zoomBtn("−", () => openra.setZoom(Math.max(0.4, curZoom() / 1.25))),
+    );
+
     const mount = () => {
         if (!document.body) return;
-        document.body.append(panel, dev, toggle, flagBtn, langPanel, cheatBadge);
+        document.body.append(panel, dev, toggle, flagBtn, langPanel, cheatBadge, joyBase, zoomWrap);
         buildDevButtons();
         // Vis "Cheater" igjen hvis dev har vaert brukt for.
         try { if (localStorage.getItem("openra_cheat_ack") === "1") cheatBadge.style.display = "block"; } catch (e) {}

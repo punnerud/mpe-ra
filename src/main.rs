@@ -1342,26 +1342,14 @@ impl Game {
             self.touch_centroid = Some(c);
             self.touch_dist = Some(d);
         } else if ts.len() == 1 {
-            // En finger: dra for a panorere. Liten bevegelse = trykk (velg).
+            // En finger: markering/flytting (default). Kamera panoreres med
+            // joysticken (HTML-overlay) -- ikke med fingeren lenger.
             self.multitouch = false;
             self.touch_centroid = None;
             self.touch_dist = None;
-            let p = ts[0].position;
-            match (self.touch1_start, self.touch1_last) {
-                (Some(start), Some(last)) => {
-                    if p.distance(start) > 10.0 {
-                        self.touch_panning = true;
-                    }
-                    if self.touch_panning {
-                        self.cam -= (p - last) / self.zoom;
-                    }
-                }
-                _ => {
-                    self.touch1_start = Some(p);
-                    self.touch_panning = false;
-                }
-            }
-            self.touch1_last = Some(p);
+            self.touch_panning = false;
+            self.touch1_start = None;
+            self.touch1_last = None;
         } else {
             self.multitouch = false;
             self.touch_centroid = None;
@@ -1412,6 +1400,25 @@ impl Game {
 
     // Gi flyttordre til markerte enheter (og sett samlepunkt hvis fabrikk er
     // markert). Brukes av bade hoyreklikk og tapp-for-a-flytte.
+    /// Pakkede formasjonsfelt rundt et senter (kvadratisk rutenett). Gir hver
+    /// enhet sitt EGET mal slik at en gruppe ikke slass om samme felt.
+    fn formation_slots(center: Vec2, n: usize, spacing: f32) -> Vec<Vec2> {
+        let cols = (n as f32).sqrt().ceil().max(1.0) as i32;
+        let rows = ((n as f32) / cols as f32).ceil().max(1.0) as i32;
+        let mut v = Vec::with_capacity(n);
+        for r in 0..rows {
+            for c in 0..cols {
+                if v.len() >= n {
+                    break;
+                }
+                let x = (c as f32 - (cols - 1) as f32 / 2.0) * spacing;
+                let y = (r as f32 - (rows - 1) as f32 / 2.0) * spacing;
+                v.push(center + vec2(x, y));
+            }
+        }
+        v
+    }
+
     fn move_selected(&mut self, dest: Vec2) {
         let factory_selected = self
             .buildings
@@ -1431,15 +1438,43 @@ impl Game {
             return;
         }
         let blocked = self.compute_blocked();
-        let n = selected.len().max(1);
-        for (k, i) in selected.iter().enumerate() {
-            let ang = (k as f32 / n as f32) * std::f32::consts::TAU;
-            let ring = if n > 1 { 26.0 } else { 0.0 };
-            let d = dest + vec2(ang.cos(), ang.sin()) * ring;
-            self.units[*i].path = astar(&blocked, self.units[*i].pos, d);
-            self.units[*i].target = Some(d);
-            if self.units[*i].kind == UnitKind::Harvester {
-                self.units[*i].harv = HarvState::Manual;
+        let n = selected.len();
+        if n == 1 {
+            let i = selected[0];
+            self.units[i].path = astar(&blocked, self.units[i].pos, dest);
+            self.units[i].target = Some(dest);
+            if self.units[i].kind == UnitKind::Harvester {
+                self.units[i].harv = HarvState::Manual;
+            }
+            return;
+        }
+        // Gi hver enhet sitt eget felt; tildel gradig naermeste ledige felt
+        // (minst kryssing) sa de fordeler seg pent rundt malet.
+        let spacing = 1.15 * TILE;
+        let slots = Self::formation_slots(dest, n, spacing);
+        let mut used = vec![false; slots.len()];
+        for &i in &selected {
+            let upos = self.units[i].pos;
+            let mut best: Option<usize> = None;
+            let mut bd = f32::MAX;
+            for (s, sp) in slots.iter().enumerate() {
+                if used[s] {
+                    continue;
+                }
+                let d = upos.distance(*sp);
+                if d < bd {
+                    bd = d;
+                    best = Some(s);
+                }
+            }
+            let d = best.map(|s| {
+                used[s] = true;
+                slots[s]
+            }).unwrap_or(dest);
+            self.units[i].path = astar(&blocked, upos, d);
+            self.units[i].target = Some(d);
+            if self.units[i].kind == UnitKind::Harvester {
+                self.units[i].harv = HarvState::Manual;
             }
         }
     }
@@ -2144,6 +2179,16 @@ impl Game {
 
         // Bevegelse langs sti.
         for u in &mut self.units {
+            // Ankomst-toleranse: er enheten naer det endelige malet, regn den som
+            // framme (i en gruppe holder det a komme til naerheten av sitt felt --
+            // da slutter den a presse mot et opptatt felt). Gjelder ikke hostere.
+            if u.harv != HarvState::ToBase && u.harv != HarvState::ToOre {
+                if let Some(t) = u.target {
+                    if u.path.len() <= 1 && u.pos.distance(t) < unit_stats(u.kind).radius * 1.2 {
+                        u.path.clear();
+                    }
+                }
+            }
             while let Some(&wp) = u.path.first() {
                 let to = wp - u.pos;
                 let dist = to.length();
@@ -3827,5 +3872,32 @@ mod tests {
         assert_eq!(g.enemy_wave_size(), ENEMY_FIRST_WAVE + ENEMY_WAVE_GROWTH);
         g.enemy_waves = 99;
         assert_eq!(g.enemy_wave_size(), ENEMY_WAVE_CAP, "bolgestorrelse skal klampes");
+    }
+
+    #[test]
+    fn gruppe_far_distinkte_formasjonsfelt() {
+        let mut g = Game::new();
+        for t in g.map.iter_mut() {
+            *t = Terrain::Grass;
+        }
+        g.units.clear();
+        // Seks enheter samlet rundt (1000,1000), alle markert.
+        for k in 0..6 {
+            let mut u = Unit::new(vec2(900.0 + k as f32 * 20.0, 900.0), TEAM_PLAYER, UnitKind::Tank);
+            u.selected = true;
+            g.units.push(u);
+        }
+        g.move_selected(vec2(1500.0, 1500.0));
+        // Alle mal skal vaere unike (ingen to enheter sikter pa samme felt).
+        let targets: Vec<Vec2> = g.units.iter().map(|u| u.target.unwrap()).collect();
+        for i in 0..targets.len() {
+            for j in (i + 1)..targets.len() {
+                assert!(
+                    targets[i].distance(targets[j]) > 1.0,
+                    "enhet {} og {} fikk samme felt {:?}",
+                    i, j, targets[i]
+                );
+            }
+        }
     }
 }
