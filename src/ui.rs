@@ -229,6 +229,23 @@ impl Game {
     fn lang_row_h(&self) -> f32 {
         30.0
     }
+    fn lang_arrow_h(&self) -> f32 {
+        28.0
+    }
+    // Rull-omradet (mellom pil-opp og pil-ned).
+    fn lang_content_rect(&self) -> Rect {
+        let p = self.lang_panel_rect();
+        let ah = self.lang_arrow_h();
+        Rect::new(p.x, p.y + ah, p.w, (p.h - 2.0 * ah).max(self.lang_row_h()))
+    }
+    fn lang_up_btn(&self) -> Rect {
+        let p = self.lang_panel_rect();
+        Rect::new(p.x, p.y, p.w, self.lang_arrow_h())
+    }
+    fn lang_down_btn(&self) -> Rect {
+        let p = self.lang_panel_rect();
+        Rect::new(p.x, p.y + p.h - self.lang_arrow_h(), p.w, self.lang_arrow_h())
+    }
 
     // ----- Produksjonsko (popup nar byggmenyen er lukket) -----
     fn queue_rows(&self) -> Vec<QRow> {
@@ -318,9 +335,9 @@ impl Game {
         order
     }
     fn lang_max_scroll(&self) -> f32 {
-        let panel = self.lang_panel_rect();
+        let c = self.lang_content_rect();
         let content = i18n::LANGS.len() as f32 * self.lang_row_h() + 8.0;
-        (content - panel.h).max(0.0)
+        (content - c.h).max(0.0)
     }
 
     fn ui_zoom(&mut self, factor: f32) {
@@ -864,33 +881,49 @@ impl Game {
     // ======================================================================
     fn handle_lang_list(&mut self, m: Vec2) {
         let panel = self.lang_panel_rect();
+        let content = self.lang_content_rect();
+        let max = self.lang_max_scroll();
+        let step = content.h * 0.8; // ett "blad" per pil-trykk
         let pressed = is_mouse_button_pressed(MouseButton::Left);
         let down = is_mouse_button_down(MouseButton::Left);
         let released = is_mouse_button_released(MouseButton::Left);
         let (_, wy) = mouse_wheel();
         if wy != 0.0 && panel.contains(m) {
-            self.lang_scroll = (self.lang_scroll - wy * 30.0).clamp(0.0, self.lang_max_scroll());
+            self.lang_scroll = (self.lang_scroll - wy * 30.0).clamp(0.0, max);
         }
-        if pressed && panel.contains(m) {
-            self.lang_dragging = false;
-            self.ui_block = true;
-        } else if pressed {
-            self.lang_open = false; // trykk utenfor lukker lista
-            self.ui_block = true;
-            return;
+        if pressed {
+            // Pil opp / ned -> bla lista.
+            if self.lang_up_btn().contains(m) {
+                self.lang_scroll = (self.lang_scroll - step).clamp(0.0, max);
+                self.ui_block = true;
+                return;
+            }
+            if self.lang_down_btn().contains(m) {
+                self.lang_scroll = (self.lang_scroll + step).clamp(0.0, max);
+                self.ui_block = true;
+                return;
+            }
+            if panel.contains(m) {
+                self.lang_dragging = false;
+                self.ui_block = true;
+            } else {
+                self.lang_open = false; // trykk utenfor lukker lista
+                self.ui_block = true;
+                return;
+            }
         }
-        if down && panel.contains(m) {
+        if down && content.contains(m) {
             let dy = m.y - self.last_mouse.y;
             if (m - self.ui_press).length() > 6.0 {
                 self.lang_dragging = true;
             }
             if self.lang_dragging {
-                self.lang_scroll = (self.lang_scroll - dy).clamp(0.0, self.lang_max_scroll());
+                self.lang_scroll = (self.lang_scroll - dy).clamp(0.0, max);
             }
             self.ui_block = true;
         }
-        if released && panel.contains(m) && !self.lang_dragging {
-            let rel = m.y - (panel.y + 4.0) + self.lang_scroll;
+        if released && content.contains(m) && !self.lang_dragging {
+            let rel = m.y - (content.y + 4.0) + self.lang_scroll;
             let idx = (rel / self.lang_row_h()).floor() as i32;
             let order = self.lang_order();
             if idx >= 0 && (idx as usize) < order.len() {
@@ -911,22 +944,42 @@ impl Game {
         draw_rectangle(p.x, p.y, p.w, p.h, panel_bg);
         draw_rectangle_lines(p.x, p.y, p.w, p.h, 1.5, accent);
         let rh = self.lang_row_h();
+        let c = self.lang_content_rect();
         let cur = i18n::index_of(self.lang);
         for (i, &li) in self.lang_order().iter().enumerate() {
             let row = &i18n::LANGS[li];
-            let ry = p.y + 4.0 + i as f32 * rh - self.lang_scroll;
-            if ry + rh < p.y || ry > p.y + p.h {
-                continue;
+            let ry = c.y + 4.0 + i as f32 * rh - self.lang_scroll;
+            if ry + rh <= c.y || ry >= c.y + c.h {
+                continue; // utenfor rull-omradet (pilstripene dekker resten)
             }
-            let hot = m.x >= p.x && m.x <= p.x + p.w && m.y >= ry && m.y < ry + rh;
+            let hot = m.x >= c.x && m.x <= c.x + c.w && m.y >= ry && m.y < ry + rh;
             if li == cur {
-                draw_rectangle(p.x + 2.0, ry, p.w - 4.0, rh, Color::new(0.16, 0.30, 0.20, 0.9));
+                draw_rectangle(c.x + 2.0, ry, c.w - 4.0, rh, Color::new(0.16, 0.30, 0.20, 0.9));
             } else if hot {
-                draw_rectangle(p.x + 2.0, ry, p.w - 4.0, rh, Color::new(0.14, 0.20, 0.16, 0.9));
+                draw_rectangle(c.x + 2.0, ry, c.w - 4.0, rh, Color::new(0.14, 0.20, 0.16, 0.9));
             }
             let label = format!("{}  ·  {}", row.4, row.3);
-            txt(&label, p.x + 8.0, ry + rh * 0.5 + 5.0, 14.0, Color::new(0.85, 0.95, 0.88, 1.0));
+            txt(&label, c.x + 8.0, ry + rh * 0.5 + 5.0, 14.0, Color::new(0.85, 0.95, 0.88, 1.0));
         }
+        // Pil opp / ned (tegnes oppa, dekker delvis synlige rader i stripene).
+        let max = self.lang_max_scroll();
+        let arrow = |r: Rect, up: bool, enabled: bool, hot: bool| {
+            let bg = if hot && enabled { Color::new(0.16, 0.24, 0.20, 1.0) } else { Color::new(0.10, 0.16, 0.13, 1.0) };
+            draw_rectangle(r.x, r.y, r.w, r.h, bg);
+            draw_rectangle_lines(r.x, r.y, r.w, r.h, 1.0, Color::new(0.25, 0.45, 0.32, 0.9));
+            let col = if enabled { Color::new(0.82, 0.96, 0.86, 1.0) } else { Color::new(0.4, 0.48, 0.43, 1.0) };
+            let cx = r.x + r.w * 0.5;
+            let cy = r.y + r.h * 0.5;
+            if up {
+                draw_triangle(vec2(cx, cy - 6.0), vec2(cx - 9.0, cy + 5.0), vec2(cx + 9.0, cy + 5.0), col);
+            } else {
+                draw_triangle(vec2(cx, cy + 6.0), vec2(cx - 9.0, cy - 5.0), vec2(cx + 9.0, cy - 5.0), col);
+            }
+        };
+        let up = self.lang_up_btn();
+        let down = self.lang_down_btn();
+        arrow(up, true, self.lang_scroll > 0.5, up.contains(m));
+        arrow(down, false, self.lang_scroll < max - 0.5, down.contains(m));
         draw_rectangle_lines(p.x, p.y, p.w, p.h, 2.0, accent);
     }
 
