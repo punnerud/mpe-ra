@@ -35,6 +35,8 @@
         placeMode(kind) { this._send(13, kind); }, // 0=RAF 1=FAB 2=Gjerde 3=Tarn
         placeBuilding(kind, x, y) { this._send(14, kind, x, y); }, // plasser direkte
         setLang(i) { this._send(15, i); }, // velg sprak (indeks i LANGS)
+        sidebar(on) { this._send(16, on ? 1 : 0); }, // vis/skjul byggmeny (burger)
+        panVel(x, y) { this._send(17, x, y); }, // kamera-pan-hastighet [-1,1] (joystick)
     };
     window.openra = openra;
 
@@ -163,7 +165,7 @@
 
     // "Cheater"-merke nede til hoyre nar dev/juks er tatt i bruk.
     const cheatBadge = css(document.createElement("div"),
-        "position:fixed;top:10px;right:10px;z-index:1002;font:bold 13px system-ui,sans-serif;" +
+        "position:fixed;top:48px;right:10px;z-index:1002;font:bold 13px system-ui,sans-serif;" +
         "background:rgba(120,20,20,.85);color:#ffd;border:1px solid #e55;border-radius:6px;" +
         "padding:4px 9px;display:none;pointer-events:none;letter-spacing:.5px");
     cheatBadge.textContent = "Cheater";
@@ -317,19 +319,29 @@
 
     // ---- Mobilkontroller: kamera-joystick + zoom-knapper ----------------
     // Joystick (nede til hoyre, Minecraft/Roblox-stil) panorerer kameraet.
-    // right:162px -> til venstre for sidebaren (150px) sa den ikke dekker
-    // byggknappene.
     const joyBase = css(document.createElement("div"),
         "position:fixed;bottom:24px;right:162px;z-index:1003;width:120px;height:120px;border-radius:50%;" +
         "background:rgba(20,30,20,.35);border:2px solid rgba(120,200,120,.5);touch-action:none;" +
         "user-select:none;-webkit-user-select:none");
+    // Plassering: pa PC star sidebaren ~150 CSS-px, sa right:162px legger
+    // joysticken til venstre for den. Pa mobil (hoy DPI / smal skjerm) blir
+    // sidebaren smal i CSS-px, sa da legger vi joysticken i hjornet (right:18px).
+    function positionJoystick() {
+        const mobile = window.matchMedia("(pointer: coarse)").matches || window.innerWidth < 760;
+        joyBase.style.right = mobile ? "18px" : "162px";
+    }
+    positionJoystick();
+    window.addEventListener("resize", positionJoystick);
+    window.addEventListener("orientationchange", positionJoystick);
     const joyKnob = css(document.createElement("div"),
         "position:absolute;left:50%;top:50%;width:52px;height:52px;border-radius:50%;" +
         "transform:translate(-50%,-50%);background:rgba(120,200,120,.55);border:2px solid rgba(200,255,200,.7);" +
         "pointer-events:none");
     joyBase.appendChild(joyKnob);
 
-    let joyVec = { x: 0, y: 0 }, joyId = null, joyRAF = null;
+    // Joysticken sender en PAN-HASTIGHET (ikke setCam pr. frame). Spillet
+    // integrerer den jevnt med dt -> ingen hakking selv om frame-raten varierer.
+    let joyId = null;
     const R = 46; // maks knott-utslag (px)
     function joyUpdate(e) {
         const r = joyBase.getBoundingClientRect();
@@ -339,27 +351,18 @@
         const cl = Math.min(len, R);
         dx = dx / len * cl; dy = dy / len * cl;
         joyKnob.style.transform = "translate(calc(-50% + " + dx + "px), calc(-50% + " + dy + "px))";
-        joyVec = { x: dx / R, y: dy / R };
-    }
-    function joyLoop() {
-        if (joyId === null) return;
-        const s = openra.state;
-        if (s && s.cam) {
-            const zoom = s.zoom || 1;
-            const PAN = 16 / zoom; // verdens-piksler pr. frame ved fullt utslag
-            openra.setCam(Math.round(s.cam.x + joyVec.x * PAN * zoom), Math.round(s.cam.y + joyVec.y * PAN * zoom));
-        }
-        joyRAF = requestAnimationFrame(joyLoop);
+        openra.panVel(+(dx / R).toFixed(3), +(dy / R).toFixed(3));
     }
     joyBase.addEventListener("pointerdown", (e) => {
-        joyId = e.pointerId; joyBase.setPointerCapture(joyId);
-        joyUpdate(e); if (joyRAF === null) joyLoop(); e.preventDefault();
+        joyId = e.pointerId; try { joyBase.setPointerCapture(joyId); } catch (x) {}
+        joyUpdate(e); e.preventDefault();
     });
     joyBase.addEventListener("pointermove", (e) => { if (e.pointerId === joyId) joyUpdate(e); });
     const joyEnd = (e) => {
         if (e.pointerId !== joyId) return;
-        joyId = null; if (joyRAF) cancelAnimationFrame(joyRAF); joyRAF = null;
-        joyVec = { x: 0, y: 0 }; joyKnob.style.transform = "translate(-50%,-50%)";
+        joyId = null;
+        joyKnob.style.transform = "translate(-50%,-50%)";
+        openra.panVel(0, 0); // stopp
     };
     joyBase.addEventListener("pointerup", joyEnd);
     joyBase.addEventListener("pointercancel", joyEnd);
@@ -379,9 +382,33 @@
         zoomBtn("−", () => openra.setZoom(Math.max(0.4, curZoom() / 1.25))),
     );
 
+    // Burger: vis/skjul byggmenyen (mest nyttig pa mobil der den er trang).
+    const isMobile = () => window.matchMedia("(pointer: coarse)").matches || window.innerWidth < 760;
+    let sidebarOpen = true;
+    const burger = css(document.createElement("button"),
+        "position:fixed;top:8px;right:10px;z-index:1004;font:18px system-ui,sans-serif;cursor:pointer;" +
+        "width:40px;height:34px;background:rgba(20,30,20,.85);color:#cfe;border:1px solid #2a4;border-radius:7px;" +
+        "display:none;touch-action:manipulation");
+    function applySidebar(open) {
+        sidebarOpen = open;
+        openra.sidebar(open);
+        burger.textContent = open ? "✕" : "☰";
+        burger.title = open ? "Lukk byggmeny" : "Åpne byggmeny";
+    }
+    burger.onclick = () => applySidebar(!sidebarOpen);
+
     const mount = () => {
         if (!document.body) return;
-        document.body.append(panel, dev, toggle, flagBtn, langPanel, cheatBadge, joyBase, zoomWrap);
+        document.body.append(panel, dev, toggle, flagBtn, langPanel, cheatBadge, joyBase, zoomWrap, burger);
+        // Pa mobil: vis burger og start med byggmenyen lukket (mer plass);
+        // pa PC: behold menyen apen og skjul burger.
+        const updateBurger = () => {
+            if (isMobile()) { burger.style.display = "block"; }
+            else { burger.style.display = "none"; applySidebar(true); }
+        };
+        if (isMobile()) applySidebar(false); else applySidebar(true);
+        updateBurger();
+        window.addEventListener("resize", updateBurger);
         buildDevButtons();
         // Vis "Cheater" igjen hvis dev har vaert brukt for.
         try { if (localStorage.getItem("openra_cheat_ack") === "1") cheatBadge.style.display = "block"; } catch (e) {}

@@ -769,6 +769,12 @@ struct Game {
     touch1_start: Option<Vec2>,
     touch1_last: Option<Vec2>,
     touch_panning: bool,
+    // hoyre museknapp: dra for a panorere (PC); rent klikk = fjern markering
+    right_pan_start: Option<Vec2>,
+    right_pan_last: Option<Vec2>,
+    right_pan_dragged: bool,
+    sidebar_open: bool, // burger-bryter (skjul byggmeny pa sma skjermer)
+    pan_vel: Vec2,      // kamera-pan-hastighet fra joystick [-1,1]
     enemy_attack_timer: f32,
     enemy_waves: u32, // antall angrepsbolger sendt -> okende styrke
     placing: Option<BuildingKind>, // bygning under plassering (sidebar)
@@ -842,6 +848,11 @@ impl Game {
             touch1_start: None,
             touch1_last: None,
             touch_panning: false,
+            right_pan_start: None,
+            right_pan_last: None,
+            right_pan_dragged: false,
+            sidebar_open: true,
+            pan_vel: Vec2::ZERO,
             enemy_attack_timer: 6.0,
             enemy_waves: 0,
             placing: None,
@@ -875,7 +886,7 @@ impl Game {
     // Bredden pa selve spillflaten (skjerm minus sidebar). Pa smale skjermer
     // (mobil staende) droppes sidebar slik at hele bredden er spillflate.
     fn sidebar_on(&self) -> bool {
-        screen_width() > 520.0
+        self.sidebar_open && screen_width() > 520.0
     }
     fn play_w(&self) -> f32 {
         if self.sidebar_on() {
@@ -1311,6 +1322,10 @@ impl Game {
         if mv != Vec2::ZERO {
             self.cam += mv.normalize() * 600.0 * dt / self.zoom;
         }
+        // Joystick-panorering (mobil): jevn dt-basert bevegelse -> ingen hakking.
+        if self.pan_vel != Vec2::ZERO {
+            self.cam += self.pan_vel * 900.0 * dt / self.zoom;
+        }
 
         let (_, wheel_y) = mouse_wheel();
         if wheel_y != 0.0 {
@@ -1318,6 +1333,26 @@ impl Game {
             self.zoom = (self.zoom * if wheel_y > 0.0 { 1.1 } else { 0.9 }).clamp(0.4, 3.0);
             let after = self.screen_to_world(vec2(mx, my));
             self.cam += before - after;
+        }
+
+        // Hoyre museknapp: dra for a panorere kameraet (PC). Et rent klikk uten
+        // bevegelse fjerner markeringen (handteres i handle_selection via flagget).
+        if is_mouse_button_pressed(MouseButton::Right) {
+            self.right_pan_start = Some(mouse);
+            self.right_pan_last = Some(mouse);
+            self.right_pan_dragged = false;
+        }
+        if is_mouse_button_down(MouseButton::Right) {
+            if let (Some(last), Some(start)) = (self.right_pan_last, self.right_pan_start) {
+                let delta = mouse - last;
+                if delta.length() > 0.0 {
+                    self.cam -= delta / self.zoom; // "grip" kartet og dra
+                }
+                if mouse.distance(start) > 6.0 {
+                    self.right_pan_dragged = true; // ble en dra -> ikke fjern markering
+                }
+                self.right_pan_last = Some(mouse);
+            }
         }
 
         // Touch (mobil).
@@ -1417,6 +1452,14 @@ impl Game {
             }
         }
         v
+    }
+
+    /// Ville enhet `idx` overlappet en annen enhet om den sto pa `p`?
+    fn unit_overlaps_at(&self, idx: usize, p: Vec2) -> bool {
+        let r = unit_stats(self.units[idx].kind).radius;
+        self.units.iter().enumerate().any(|(k, o)| {
+            k != idx && o.pos.distance(p) < r + unit_stats(o.kind).radius
+        })
     }
 
     fn move_selected(&mut self, dest: Vec2) {
@@ -1661,10 +1704,15 @@ impl Game {
             }
         }
 
-        if is_mouse_button_pressed(MouseButton::Right) {
-            // Hoyreklikk fjerner markeringen (flytting skjer med tapp/venstreklikk
-            // pa bakken, sa det fungerer ogsa pa touch uten hoyreklikk).
-            self.clear_selection();
+        if is_mouse_button_released(MouseButton::Right) {
+            // Rent hoyreklikk (uten dra) fjerner markeringen. Var det en dra,
+            // panorerte vi kameraet i stedet -> behold markeringen.
+            if !self.right_pan_dragged {
+                self.clear_selection();
+            }
+            self.right_pan_start = None;
+            self.right_pan_last = None;
+            self.right_pan_dragged = false;
         }
     }
 
@@ -2334,10 +2382,25 @@ impl Game {
                     let ublocked = self.blocked_with_units(&blocked, i, t);
                     let np = astar(&ublocked, pos, t);
                     if !np.is_empty() {
-                        self.units[i].path = np; // detour funnet
+                        self.units[i].path = np; // detour rundt folkemengden funnet
                     } else {
-                        // ingen detour (helt omringet) -> vent, prov igjen senere
-                        self.units[i].path = astar(&blocked, pos, t);
+                        // Ingen vei rundt (f.eks. en bataljon sperrer en passasje).
+                        // Rygg litt unna blokkeringen for a lage rom og bryte
+                        // floken, sa prov a rute pa nytt -- gir "kjor tilbake og
+                        // rundt"-oppforsel i stedet for a sta bom fast.
+                        let r = unit_stats(self.units[i].kind).radius;
+                        if let Some(&wp) = self.units[i].path.first() {
+                            let back = (pos - wp).normalize_or_zero();
+                            // prov a rygge rett bakover, ellers skratt til siden
+                            for cand in [back, vec2(-back.y, back.x), vec2(back.y, -back.x)] {
+                                let bp = pos + cand * r * 1.6;
+                                if self.passable_world(bp) && !self.unit_overlaps_at(i, bp) {
+                                    self.units[i].pos = bp;
+                                    break;
+                                }
+                            }
+                        }
+                        self.units[i].path = astar(&blocked, self.units[i].pos, t);
                     }
                 }
                 self.units[i].stuck = 0.0;
@@ -2565,7 +2628,15 @@ impl Game {
                 self.clamp_camera();
             }
             3 => self.cam = vec2(a[0], a[1]),
-            4 => self.zoom = a[0].clamp(0.4, 3.0),
+            4 => {
+                // Zoom om SENTERET av spillomradet, sa man zoomer inn der man
+                // ser (ikke mot kartets hjorne).
+                let center = vec2(self.play_w() * 0.5, screen_height() * 0.5);
+                let before = self.screen_to_world(center);
+                self.zoom = a[0].clamp(0.4, 3.0);
+                let after = self.screen_to_world(center);
+                self.cam += before - after;
+            }
             5 => {
                 let team = if a[0] as i32 == 1 { TEAM_ENEMY } else { TEAM_PLAYER };
                 self.units.push(Unit::new(vec2(a[2], a[3]), team, kind_of(a[1])));
@@ -2612,6 +2683,15 @@ impl Game {
             15 => {
                 // Velg sprak ut fra flaggvelger-indeks.
                 self.lang = i18n::from_index(a[0] as usize);
+            }
+            16 => {
+                // Burger: vis/skjul byggmenyen.
+                self.sidebar_open = a[0] != 0.0;
+            }
+            17 => {
+                // Joystick: sett kamera-pan-hastighet (klemt til lengde 1).
+                let v = vec2(a[0], a[1]);
+                self.pan_vel = if v.length() > 1.0 { v.normalize() } else { v };
             }
             _ => {}
         }
@@ -2995,6 +3075,26 @@ impl Game {
 
     fn draw_sidebar(&self) {
         if !self.sidebar_on() {
+            // Byggmenyen er skjult (burger) -> vis i det minste produksjons-
+            // progress oppe til hoyre sa man ser hva som bygges.
+            let p = &self.prod[TEAM_PLAYER as usize];
+            if !p.active.is_empty() || !p.queue.is_empty() {
+                let w = 156.0;
+                let x = screen_width() - w - 8.0;
+                let mut y = 36.0;
+                for (k, rem) in &p.active {
+                    let frac = (1.0 - rem / unit_stats(*k).build_time).clamp(0.0, 1.0);
+                    draw_rectangle(x, y, w, 18.0, Color::new(0.10, 0.12, 0.14, 0.85));
+                    draw_rectangle(x, y, w * frac, 18.0, Color::new(0.25, 0.6, 0.35, 0.9));
+                    draw_rectangle_lines(x, y, w, 18.0, 1.5, Color::new(0.4, 0.5, 0.45, 0.9));
+                    txt(self.t(k.name_key()), x + 5.0, y + 14.0, 13.0, WHITE);
+                    y += 22.0;
+                }
+                let q = p.queue.len();
+                if q > 0 {
+                    txt(&format!("+{}", q), x + w - 30.0, y + 12.0, 14.0, Color::new(0.6, 0.9, 1.0, 1.0));
+                }
+            }
             return;
         }
         let x = self.play_w();
