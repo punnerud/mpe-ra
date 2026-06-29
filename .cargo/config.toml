@@ -1,0 +1,5 @@
+# macroquad/miniquad importerer GL- og JS-funksjoner fra mq_js_bundle.js i runtime.
+# Nyere wasm-ld feiler ellers med "undefined symbol: glGenTextures" osv.
+# --allow-undefined gjor at disse behandles som importer i stedet for lenkefeil.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "link-arg=--allow-undefined"]

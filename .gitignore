@@ -1,0 +1,9 @@
+# Rust build-artefakter
+/target
+
+# Bygde WASM/font ligger i web/ og sjekkes inn for enkel servering,
+# men det store mellomlageret ikke:
+**/*.rs.bk
+
+# OS
+.DS_Store

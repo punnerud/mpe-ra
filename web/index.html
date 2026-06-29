@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OpenRA Rust — WebGL</title>
+    <style>
+        html, body { margin: 0; padding: 0; height: 100%; background: #111; overflow: hidden; }
+        canvas { display: block; width: 100vw; height: 100vh; outline: none; }
+        #loading {
+            position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+            color: #ddd; font-family: system-ui, sans-serif; font-size: 20px; z-index: 10;
+        }
+        #controls {
+            position: fixed; left: 10px; bottom: 36px; z-index: 1000;
+            display: none; gap: 6px; flex-wrap: wrap;
+            font: 13px system-ui, sans-serif;
+        }
+        #controls button {
+            background: #1c2f1c; color: #cfe; border: 1px solid #2a4;
+            border-radius: 6px; padding: 5px 10px; cursor: pointer;
+        }
+        #controls button:hover { background: #284428; }
+    </style>
+</head>
+<body>
+    <div id="loading">Loading OpenRA Rust...</div>
+    <canvas id="glcanvas" tabindex="1"></canvas>
+
+    <!-- Hurtigknapper som styrer spillet via broen (tekst settes av bridge.js) -->
+    <div id="controls">
+        <button id="ctl-restart" onclick="openra.restart()">Restart (R)</button>
+        <button id="ctl-center" onclick="openra.center()">Center</button>
+        <button id="ctl-zoom" onclick="openra.setZoom(1)">Zoom 1.0</button>
+        <button id="ctl-inf" onclick="openra.build(0)">Build rifleman (1)</button>
+        <button id="ctl-tank" onclick="openra.build(1)">Build tank (2)</button>
+        <button id="ctl-harv" onclick="openra.build(2)">Build harvester (3)</button>
+    </div>
+
+    <!-- 1) miniquad/macroquad sin WebGL-loader -->
+    <script src="https://not-fl3.github.io/miniquad-samples/mq_js_bundle.js"></script>
+    <!-- 2) oversettelser (ordbok), MA lastes for bridge.js -->
+    <script src="i18n.js"></script>
+    <!-- 3) var bro (må lastes ETTER bundlen, FØR load()) -->
+    <script src="bridge.js"></script>
+    <!-- 3) start spillet -->
+    <script>
+        window.addEventListener("error", () => {
+            const el = document.getElementById("loading");
+            if (el) el.textContent = (window.openra && window.I18Nt)
+                ? window.I18Nt(0, "LoadError")
+                : "Could not load WASM. Are you using a web server? (see README)";
+        });
+        setTimeout(() => { const el = document.getElementById("loading"); if (el) el.remove(); }, 1500);
+        load("openrarust.wasm");
+    </script>
+</body>
+</html>
