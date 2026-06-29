@@ -1,81 +1,74 @@
-# OpenRA Rust
+# MPE-RA
 
-En liten **sanntidsstrategi-grunnmur (RTS)** i OpenRA-ånd, skrevet i **Rust** og
-spillbar i nettleseren via **WebAssembly + WebGL2** (rendret med
-[`macroquad`](https://macroquad.rs)). Kjører også nativt på desktop.
+*Morten Punnerud-Engelstad RA* — a small real-time-strategy game in the spirit of
+Red Alert / OpenRA, written in **Rust** with [macroquad](https://macroquad.rs/)
+and compiled to **WebAssembly** so it runs in the browser, on desktop, and on
+mobile (iPhone/Android). All UI (joystick, zoom, build menu, dev menu, language
+picker, campaign menus) is drawn in Rust — the web page is just a thin shell.
 
-> ⚠️ Dette er **ikke** en port av OpenRA (som er hundretusenvis av linjer C#).
-> Det er en kompakt, fungerende RTS-kjerne som demonstrerer terreng, enheter,
-> seleksjon, kommandering og kamp i nettleseren med WebGL — et godt
-> utgangspunkt å bygge videre på.
+## ▶ Play in the browser
 
-## Hva som er med
+**https://punnerud.github.io/mpe-ra/**
 
-- Rutebasert terreng (gress, malm, vann, fjell) — vann/fjell er ufremkommelig
-- To lag (blå spiller vs. rød fiende) med enheter
-- Boks-seleksjon, enkeltklikk-valg og flyttkommandoer
-- Automatisk kamp innen rekkevidde, med HP-barer og skudd-effekter
-- Enkel kollisjon mellom enheter og en lett fiende-AI
-- Kamera: panorering (WASD/piltaster/skjermkant) og zoom (musehjul)
-- Seier/nederlag-tilstand med omstart (R)
+Works on desktop and on phones (touch). Pan with the on-screen joystick or by
+pushing the screen edges; zoom with `+` / `-`; open the build menu with the `≡`
+button.
 
-## Styring
+## Features
 
-| Handling | Tast / mus |
-|---|---|
-| Velg enheter (boks) | Hold venstre museknapp og dra |
-| Velg enkeltenhet | Venstreklikk |
-| Flytt valgte enheter | Høyreklikk |
-| Panorer kamera | WASD / piltaster / skjermkant |
-| Zoom | Musehjul |
-| Start på nytt | R |
+- 100-level campaign with hand-designed maps, gradually increasing difficulty,
+  water/terrain variation and up to two enemy bases with distinct styles
+  (Balanced / Armor / Swarm).
+- Build economy (harvesters → refinery → credits), units (Rifleman, Tank,
+  Harvester) and buildings (Refinery, Factory, walls, defenses).
+- Start screen with level select (levels unlock as you win), a language-aware
+  how-to-play guide, and 40+ UI languages.
+- Win without cheating to record your completion time as the level score.
 
-## Kjør i nettleser (WebGL)
+## How to play
 
-Krever Rust-target `wasm32-unknown-unknown`:
+- **Goal:** destroy every enemy HQ while protecting your own.
+- **Build:** open the menu (`≡`) to train units and place buildings.
+- **Economy:** harvesters gather ore and bring it to the refinery for credits.
+- **Move:** drag to select units, tap the map to move them.
+- **Navigate:** use the joystick or push the screen edges to pan.
+- **Rally:** select the factory and tap the map to set where new units gather.
 
-```bash
-rustup target add wasm32-unknown-unknown
-./build-web.sh
-cd web && python3 -m http.server 8080
-```
+## Build from source
 
-Åpne så <http://localhost:8080>.
+Requires the Rust toolchain.
 
-> Du **må** servere via en webserver (ikke `file://`) — nettlesere nekter å
-> laste `.wasm` direkte fra filsystemet.
-
-## Kjør nativt (desktop)
-
-```bash
+```sh
+# Native (desktop)
 cargo run --release
+
+# Run the tests
+cargo test
+
+# WebAssembly build (output copied into web/)
+rustup target add wasm32-unknown-unknown
+cargo build --release --target wasm32-unknown-unknown
+cp target/wasm32-unknown-unknown/release/openrarust.wasm web/openrarust.wasm
+
+# Serve locally (any static server), then open http://localhost:8088
+python3 -m http.server 8088 --directory web
 ```
 
-## Hvordan WebGL-byggingen fungerer
+The web build is published automatically to GitHub Pages from `web/` via the
+workflow in `.github/workflows/pages.yml` on every push to `main`.
 
-- `macroquad` kompilerer til `wasm32-unknown-unknown` og tegner via WebGL2.
-- `web/index.html` laster `mq_js_bundle.js` (miniquad sin loader) som kobler
-  WASM mot nettleserens WebGL-kontekst og kaller `load("openrarust.wasm")`.
-- GL-funksjonene (`glGenTextures`, …) leveres av JS i runtime, så
-  `.cargo/config.toml` setter `--allow-undefined` for å unngå lenkefeil.
+## Internationalization
 
-## Filstruktur
+Translations live in `i18n/strings.csv`. Regenerate the Rust/JS tables with:
 
-```
-Cargo.toml            # avhengigheter (macroquad) + release-profil
-.cargo/config.toml    # wasm linker-flagg (--allow-undefined)
-src/main.rs           # hele spillet (terreng, enheter, input, kamp, tegning)
-web/index.html        # nettleser-loader
-web/openrarust.wasm   # bygget artefakt (genereres av build-web.sh)
-build-web.sh          # bygger wasm og kopierer til web/
+```sh
+python3 i18n/generate.py
 ```
 
-## Mulige neste steg
+## License
 
-- Bygninger og produksjonskø (raffineri, fabrikk)
-- Malm-høsting og økonomi
-- A*-pathfinding rundt hindringer (nå stopper enheter ved blokkert rute)
-- Tåke/utforskning (fog of war)
-- Sprites/teksturer i stedet for primitiver
-- Nettverksspill
-```
+[PolyForm Noncommercial License 1.0.0](LICENSE.md).
+
+You may use, modify and share this for **any noncommercial purpose**.
+**Commercial use by others is not permitted.** The copyright holder,
+Morten Punnerud-Engelstad, retains all rights, including commercial use.

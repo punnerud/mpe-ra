@@ -81,13 +81,13 @@ use EnemyStyle::{Armor, Balanced, Swarm};
 /// Sentinel-markorene brukes av assembler-skriptet som genererte tabellen.
 // <<LEVELS_START>>
 pub const LEVELS: &[LevelSpec] = &[
-    // 1
+    // 1 -- den opprinnelige banen (gjenopprettet etter onske)
     LevelSpec {
-        player_base: (8, 40),
-        enemies: &[EnemySpec { pos: (55, 8), style: Balanced }],
-        water: &[],
-        ore: &[(32, 24, 4.5), (16, 38, 4.0), (50, 14, 4.0)],
-        rock_density: 0.975,
+        player_base: (55, 39),
+        enemies: &[EnemySpec { pos: (8, 7), style: Balanced }],
+        water: &[(12, 38, 5.0)],
+        ore: &[(20, 16, 4.5), (44, 32, 5.0), (32, 24, 3.5)],
+        rock_density: 0.965,
         player_credits: 1600.0,
         enemy_credits: 900.0,
         enemy_income: 7.0,

@@ -3,11 +3,12 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <title>OpenRA Rust — WebGL</title>
+    <title>MPE-RA</title>
     <style>
-        html, body { margin: 0; padding: 0; height: 100%; background: #111; overflow: hidden;
+        html, body { margin: 0; padding: 0; height: 100vh; height: 100dvh; background: #111; overflow: hidden;
             touch-action: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
-        canvas { display: block; width: 100vw; height: 100vh; outline: none; }
+        /* 100dvh = synlig hoyde uten Safari-linja pa iPhone; vh som fallback. */
+        canvas { display: block; width: 100vw; height: 100vh; height: 100dvh; outline: none; }
         #loading {
             position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
             color: #ddd; font-family: system-ui, sans-serif; font-size: 20px; z-index: 10;

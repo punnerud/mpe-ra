@@ -782,6 +782,15 @@ fn harvest_score(travel_to: f32, mine_time: f32, travel_back: f32, predicted_wai
 // Spilltilstand
 // ---------------------------------------------------------------------------
 
+// Hvilken skjerm vises. Start = nivåvelger/meny, Guide = veiledning, Playing =
+// selve spillet. Meny/guide pauser all spill-logikk.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Screen {
+    Start,
+    Guide,
+    Playing,
+}
+
 struct Game {
     map: Vec<Terrain>,
     ore: Vec<f32>,
@@ -837,6 +846,8 @@ struct Game {
     ai_tick: f32,           // sek mellom AI-beslutninger
     enemy_power: f32,       // hp/skade-multiplikator pa fiende-enheter
     enemy_style: levels::EnemyStyle, // former fiendens enhetsmiks + tint
+    level_time: f32,        // spilt tid pa nivaet (score; teller ikke pause)
+    level_cheated: bool,    // juks brukt -> ingen tid/score vises
     // --- In-canvas UI (alt i Rust, native-klar -- ingen JS/HTML) ---
     joy_active: bool, // joysticken dras na
     joy_vec: Vec2,    // knott-forskyvning [-1,1] (for tegning)
@@ -851,6 +862,14 @@ struct Game {
     ui_press: Vec2,   // posisjon der venstre-trykk startet (UI-dra)
     lang_dragging: bool, // ruller spraklista med fingeren
     ui_init: bool,    // forste-frame-oppsett gjort (sidebar-standard etter skjerm)
+    // --- Skjerm / meny ---
+    screen: Screen,        // Start (nivameny) / Guide / Playing
+    max_unlocked: usize,   // hoyeste lasted opp niva (0-basert); nivaer <= dette + 1 spillbare
+    playing_started: bool, // et niva er startet fra menyen -> vis "Tilbake til spillet"
+    nav_show: f32,         // nedtelling: vis flytende minikart mens man navigerer
+    prev_cam: Vec2,        // forrige frames kamera (for a oppdage navigering)
+    rally_show: f32,       // nedtelling: vis samlepunkt-flagget etter at det ble satt
+    confirm_level: Option<usize>, // nivameny: avventer bekreftelse for bytte (mister data)
 }
 
 impl Game {
@@ -865,20 +884,39 @@ impl Game {
         set_enemy_tint(spec.enemies[0].style);
 
         let mut map = levels::gen_map_for(spec);
-        // Rydd terrenget rundt hver base (ikke vann/fjell under bygg).
-        let clear = |map: &mut Vec<Terrain>, c: (i32, i32)| {
-            for dy in -4i32..=4 {
-                for dx in -4i32..=4 {
-                    let (x, y) = (c.0 + dx, c.1 + dy);
-                    if x >= 0 && y >= 0 && (x as usize) < MAP_W && (y as usize) < MAP_H {
-                        map[y as usize * MAP_W + x as usize] = Terrain::Grass;
+        // Rydd terrenget under HELE basen -- ikke bare HK, men ogsa rutene der
+        // raffineri og fabrikk havner (samme forskyvninger som spawn_base, m=-1
+        // for spiller, +1 for fiende). Ellers kan et bygg lande pa malm/fjell
+        // utenfor det ryddede feltet (sett pa niva 2: raffineriet la oppa malmen
+        // sa harvesteren satte seg fast uten a hente/levere).
+        let clear_base = |map: &mut Vec<Terrain>, base: (i32, i32), m: f32| {
+            let pts = [
+                (base.0, base.1, 3i32), // HK + naerliggende enheter
+                (
+                    base.0 + (150.0 * m / TILE).round() as i32,
+                    base.1 + (20.0 / TILE).round() as i32,
+                    2,
+                ), // raffineri
+                (
+                    base.0 + (40.0 * m / TILE).round() as i32,
+                    base.1 + (150.0 / TILE).round() as i32,
+                    2,
+                ), // fabrikk
+            ];
+            for (cx, cy, rad) in pts {
+                for dy in -rad..=rad {
+                    for dx in -rad..=rad {
+                        let (x, y) = (cx + dx, cy + dy);
+                        if x >= 0 && y >= 0 && (x as usize) < MAP_W && (y as usize) < MAP_H {
+                            map[y as usize * MAP_W + x as usize] = Terrain::Grass;
+                        }
                     }
                 }
             }
         };
-        clear(&mut map, spec.player_base);
+        clear_base(&mut map, spec.player_base, -1.0);
         for e in spec.enemies {
-            clear(&mut map, e.pos);
+            clear_base(&mut map, e.pos, 1.0);
         }
 
         let mut ore = vec![0.0f32; MAP_W * MAP_H];
@@ -952,6 +990,8 @@ impl Game {
             ai_tick: spec.ai_tick,
             enemy_power: spec.enemy_power,
             enemy_style: spec.enemies[0].style,
+            level_time: 0.0,
+            level_cheated: false,
             joy_active: false,
             joy_vec: Vec2::ZERO,
             dev_open: false,
@@ -965,6 +1005,13 @@ impl Game {
             ui_press: Vec2::ZERO,
             lang_dragging: false,
             ui_init: false,
+            screen: Screen::Start,
+            max_unlocked: 0,
+            playing_started: false,
+            nav_show: 0.0,
+            prev_cam: Vec2::ZERO,
+            rally_show: 0.0,
+            confirm_level: None,
         };
         g.compute_visibility();
         g
@@ -974,12 +1021,16 @@ impl Game {
     fn load_level(&mut self, level: usize) {
         let (lang, cheater, muted) = (self.lang, self.cheater, self.muted);
         let (sidebar, ui_init) = (self.sidebar_open, self.ui_init);
+        let (screen, unlocked, started) = (self.screen, self.max_unlocked, self.playing_started);
         *self = Game::new_level(level.min(levels::count().saturating_sub(1)));
         self.lang = lang;
         self.cheater = cheater;
         self.muted = muted;
         self.sidebar_open = sidebar;
         self.ui_init = ui_init;
+        self.screen = screen;
+        self.max_unlocked = unlocked;
+        self.playing_started = started;
         bridge::set_muted(muted);
     }
 
@@ -1419,9 +1470,16 @@ impl Game {
 
         let inside = mx >= 0.0 && my >= 0.0 && mx <= screen_width() && my <= screen_height();
         // Ikke kant-scroll nar pekeren er over en kontroll/meny (ellers drifter
-        // kartet nar man trykker zoom/burger i hjornet).
-        if self.mouse_active && inside && !self.joy_active && !self.point_in_ui(mouse) {
-            let edge = 24.0;
+        // kartet nar man trykker zoom/burger i hjornet) -- og ikke nar den apne
+        // byggmenyen ligger under pekeren (man skal kunne velge i menyen i ro).
+        if self.mouse_active
+            && inside
+            && !self.joy_active
+            && !self.point_in_ui(mouse)
+            && !self.in_sidebar(mouse)
+        {
+            // Bredere kant-sone -> man slipper a treffe helt ytterst for a panorere.
+            let edge = 70.0;
             if mx < edge {
                 mv.x -= 1.0;
             }
@@ -1580,6 +1638,39 @@ impl Game {
         })
     }
 
+    // Finn et ledig felt naer samlepunktet sa nye enheter ikke stables oppa
+    // hverandre (ringsok utover). Ellers klumper hele produksjonen seg pa ETT
+    // punkt og enheter inne i klyngen kommer seg ikke ut.
+    fn free_rally_slot(&self, team: u8, center: Vec2, blocked: &[bool]) -> Vec2 {
+        let spacing = unit_stats(UnitKind::Tank).radius * 2.2;
+        for ring in 0..10i32 {
+            let count = if ring == 0 { 1 } else { ring * 6 };
+            for k in 0..count {
+                let ang = (k as f32 / count as f32) * std::f32::consts::TAU + ring as f32 * 0.6;
+                let p = if ring == 0 {
+                    center
+                } else {
+                    center + vec2(ang.cos(), ang.sin()) * ring as f32 * spacing
+                };
+                let (tx, ty) = ((p.x / TILE).floor() as i32, (p.y / TILE).floor() as i32);
+                if !in_bounds(tx, ty) || blocked[ty as usize * MAP_W + tx as usize] {
+                    continue;
+                }
+                if !self.passable_world(p) {
+                    continue;
+                }
+                let occupied = self
+                    .units
+                    .iter()
+                    .any(|u| u.team == team && u.pos.distance(p) < spacing * 0.85);
+                if !occupied {
+                    return p;
+                }
+            }
+        }
+        center
+    }
+
     fn move_selected(&mut self, dest: Vec2) {
         let factory_selected = self
             .buildings
@@ -1587,6 +1678,7 @@ impl Game {
             .any(|b| b.selected && b.kind == BuildingKind::Factory && b.team == TEAM_PLAYER);
         if factory_selected {
             self.rally[TEAM_PLAYER as usize] = dest;
+            self.rally_show = 1.0;
         }
         let selected: Vec<usize> = self
             .units
@@ -1679,17 +1771,8 @@ impl Game {
         // --- Sidebar / minikart: fanger klikk for de nar verden ---
         if self.in_sidebar(mouse) {
             self.drag_start = None;
-            // Dra i minikartet -> flytt kamera dit.
-            if is_mouse_button_down(MouseButton::Left) {
-                let mm = self.minimap_rect();
-                if mm.contains(mouse) {
-                    let fx = ((mouse.x - mm.x) / mm.w).clamp(0.0, 1.0) * MAP_W as f32 * TILE;
-                    let fy = ((mouse.y - mm.y) / mm.h).clamp(0.0, 1.0) * MAP_H as f32 * TILE;
-                    let view = vec2(self.play_w(), screen_height()) / self.zoom;
-                    self.cam = vec2(fx, fy) - view * 0.5;
-                    self.clamp_camera();
-                }
-            }
+            // (Minikartet er kun visning -- trykk/dra hopper ikke lenger kamera,
+            //  det utlostes utilsiktet nar man brukte burger/menyen.)
             // Trykk pa knapp -> produksjon / start plassering / flytt / fjern.
             if is_mouse_button_pressed(MouseButton::Left) {
                 for (rect, kind) in self.build_buttons() {
@@ -1795,10 +1878,15 @@ impl Game {
 
                     let has_unit_sel =
                         self.units.iter().any(|u| u.selected && u.team == TEAM_PLAYER);
+                    let factory_sel = self.buildings.iter().any(|b| {
+                        b.selected && b.team == TEAM_PLAYER && b.kind == BuildingKind::Factory
+                    });
                     if let Some(i) = hit_unit {
-                        // Trykk pa egen enhet -> velg den.
+                        // Trykk pa egen enhet -> velg den OG lukk byggmenyen
+                        // (man bygger ikke nar man styrer enheter).
                         self.clear_selection();
                         self.units[i].selected = true;
+                        self.sidebar_open = false;
                     } else if let Some(i) = hit_bld {
                         // Trykk pa egen bygning -> velg den OG apne byggmenyen
                         // (sa man ser produksjon / reparer / flytt / fjern).
@@ -1807,7 +1895,14 @@ impl Game {
                         self.sidebar_open = true;
                     } else if has_unit_sel {
                         // Tomt punkt med enheter markert -> flytt dit (tapp-for-flytt).
+                        // (move_selected setter ogsa samlepunkt hvis fabrikk er valgt.)
                         self.move_selected(w);
+                    } else if factory_sel {
+                        // Fabrikk valgt + tomt punkt -> sett samlepunkt der, og lukk.
+                        self.rally[TEAM_PLAYER as usize] = w;
+                        self.rally_show = 1.0; // vis flagget ~1 s selv om menyen lukkes
+                        self.clear_selection();
+                        self.sidebar_open = false;
                     } else {
                         // Tomt punkt (ingen enheter) -> avmarkér og lukk byggmenyen.
                         self.clear_selection();
@@ -1833,10 +1928,11 @@ impl Game {
         }
 
         if is_mouse_button_released(MouseButton::Right) {
-            // Rent hoyreklikk (uten dra) fjerner markeringen. Var det en dra,
-            // panorerte vi kameraet i stedet -> behold markeringen.
+            // Rent hoyreklikk (uten dra) fjerner markeringen OG lukker byggmenyen.
+            // Var det en dra, panorerte vi kameraet i stedet -> behold alt.
             if !self.right_pan_dragged {
                 self.clear_selection();
+                self.sidebar_open = false;
             }
             self.right_pan_start = None;
             self.right_pan_last = None;
@@ -2170,6 +2266,8 @@ impl Game {
         if dt == 0.0 {
             return;
         }
+        // Score = spilt tid pa nivaet (kun aktiv tid, ikke pause/seier).
+        self.level_time += dt_real;
 
         let blocked = self.compute_blocked();
 
@@ -2224,8 +2322,10 @@ impl Game {
                     u.max_hp *= self.enemy_power;
                 }
                 if kind != UnitKind::Harvester {
-                    u.path = astar(&blocked, u.pos, self.rally[team]);
-                    u.target = Some(self.rally[team]);
+                    // Eget ledig felt naer samlepunktet -> ingen pile-up.
+                    let slot = self.free_rally_slot(team as u8, self.rally[team], &blocked);
+                    u.path = astar(&blocked, u.pos, slot);
+                    u.target = Some(slot);
                 }
                 self.units.push(u);
                 if team as u8 == TEAM_PLAYER {
@@ -2749,6 +2849,15 @@ impl Game {
         } else if !e_hq {
             self.outcome = Some(true);
             bridge::sound(SND_WIN);
+            self.unlock_next();
+        }
+    }
+
+    // Las opp neste niva (etter seier) sa det blir valgbart i nivamenyen.
+    fn unlock_next(&mut self) {
+        let next = (self.level + 1).min(levels::count().saturating_sub(1));
+        if next > self.max_unlocked {
+            self.max_unlocked = next;
         }
     }
 
@@ -2816,7 +2925,10 @@ impl Game {
                 }
             }
             9 => self.speed = a[0].clamp(0.1, 8.0),
-            10 => self.rally[TEAM_PLAYER as usize] = vec2(a[0], a[1]),
+            10 => {
+                self.rally[TEAM_PLAYER as usize] = vec2(a[0], a[1]);
+                self.rally_show = 1.0;
+            }
             11 => {
                 // Flytt alle spillerens kampenheter til (a[0], a[1]) via pathfinding.
                 let dest = vec2(a[0], a[1]);
@@ -2860,6 +2972,12 @@ impl Game {
     fn draw(&self) {
         clear_background(Color::new(0.05, 0.06, 0.07, 1.0));
 
+        // Start/Guide-skjerm: tegn menyen i stedet for selve spillet.
+        if self.screen != Screen::Playing {
+            self.draw_menu();
+            return;
+        }
+
         let tl = self.screen_to_world(vec2(0.0, 0.0));
         let br = self.screen_to_world(vec2(self.play_w(), screen_height()));
         let x0 = (tl.x / TILE).floor().max(0.0) as usize;
@@ -2882,11 +3000,14 @@ impl Game {
             }
         }
 
-        if self.buildings.iter().any(|b| b.selected && b.kind == BuildingKind::Factory) {
-            // Samlepunkt: et flagg der nye enheter moter opp. Hoyreklikk/tapp
-            // pa bakken (med fabrikk markert) flytter det.
+        let factory_sel = self.buildings.iter().any(|b| b.selected && b.kind == BuildingKind::Factory);
+        if factory_sel || self.rally_show > 0.0 {
+            // Samlepunkt: et flagg der nye enheter moter opp. Vises mens fabrikken
+            // er valgt, og en kort stund (~1 s) etter at det ble satt selv om
+            // byggmenyen/markeringen forsvant.
             let r = self.world_to_screen(self.rally[TEAM_PLAYER as usize]);
-            let g = Color::new(0.25, 0.9, 0.3, 0.95);
+            let fade = if factory_sel { 0.95 } else { (self.rally_show / 1.0).clamp(0.0, 1.0) * 0.95 };
+            let g = Color::new(0.25, 0.9, 0.3, fade);
             draw_line(r.x, r.y, r.x, r.y - 22.0, 2.0, g); // stang
             draw_triangle(vec2(r.x, r.y - 22.0), vec2(r.x + 16.0, r.y - 17.0), vec2(r.x, r.y - 12.0), g); // flagg
             draw_circle(r.x, r.y, 3.0, g); // fot
@@ -3239,7 +3360,7 @@ impl Game {
             let p = &self.prod[TEAM_PLAYER as usize];
             if !p.active.is_empty() || !p.queue.is_empty() {
                 let w = 156.0;
-                let x = screen_width() - w - 8.0;
+                let x = screen_width() - w - 66.0; // til venstre for burger-knappen
                 let mut y = 36.0;
                 for (k, rem) in &p.active {
                     let frac = (1.0 - rem / unit_stats(*k).build_time).clamp(0.0, 1.0);
@@ -3385,7 +3506,31 @@ impl Game {
     }
 
     fn draw_minimap(&self) {
-        let mm = self.minimap_rect();
+        self.draw_minimap_at(self.minimap_rect());
+    }
+
+    // Flytende minikart (nede til venstre) som dukker opp mens man navigerer og
+    // byggmenyen er lukket -- viser kartet + markering av synlig utsnitt.
+    pub(crate) fn nav_minimap_rect(&self) -> Rect {
+        let w = 132.0_f32.min(self.play_w() - 20.0);
+        let h = w * (MAP_H as f32 / MAP_W as f32);
+        Rect::new(10.0, screen_height() - h - 12.0 - self.safe_bottom(), w, h)
+    }
+    pub(crate) fn nav_minimap_visible(&self) -> bool {
+        self.screen == Screen::Playing && !self.sidebar_on() && self.nav_show > 0.0
+    }
+    pub(crate) fn draw_nav_minimap(&self) {
+        if !self.nav_minimap_visible() {
+            return;
+        }
+        let mm = self.nav_minimap_rect();
+        let a = (self.nav_show / 0.4).clamp(0.0, 1.0); // ton raskt ut nar man slutter a navigere
+        draw_rectangle(mm.x - 4.0, mm.y - 4.0, mm.w + 8.0, mm.h + 8.0, Color::new(0.05, 0.06, 0.07, 0.82 * a));
+        draw_rectangle_lines(mm.x - 4.0, mm.y - 4.0, mm.w + 8.0, mm.h + 8.0, 1.5, Color::new(0.30, 0.55, 0.40, 0.9 * a));
+        self.draw_minimap_at(mm);
+    }
+
+    fn draw_minimap_at(&self, mm: Rect) {
         let map_px = vec2(MAP_W as f32 * TILE, MAP_H as f32 * TILE);
         draw_rectangle(mm.x - 2.0, mm.y - 2.0, mm.w + 4.0, mm.h + 4.0, BLACK);
         let sx = mm.w / MAP_W as f32;
@@ -3489,16 +3634,29 @@ async fn main() {
     loop {
         let dt = get_frame_time().min(0.05);
 
-        if is_key_pressed(KeyCode::R) {
+        if is_key_pressed(KeyCode::R) && game.screen == Screen::Playing {
             let lvl = game.level; // spill gjeldende niva pa nytt
             game.load_level(lvl);
         }
 
         game.handle_ui();
-        game.handle_camera(dt);
-        game.handle_keys();
-        game.handle_selection();
-        game.update(dt);
+        if game.screen == Screen::Playing {
+            game.handle_camera(dt);
+            game.handle_keys();
+            game.handle_selection();
+            game.update(dt);
+            // Vis flytende minikart mens man navigerer + en kort hale (~1 s).
+            if (game.cam - game.prev_cam).length() > 0.4 {
+                game.nav_show = 1.0;
+            }
+            game.prev_cam = game.cam;
+            if game.nav_show > 0.0 {
+                game.nav_show -= dt;
+            }
+            if game.rally_show > 0.0 {
+                game.rally_show -= dt;
+            }
+        }
         game.draw();
 
         let players = game.units.iter().filter(|u| u.team == TEAM_PLAYER).count() as i32;
@@ -3576,6 +3734,61 @@ mod tests {
         }
         let last = *path.last().unwrap();
         assert!(last.distance(goal) < TILE * 1.5, "siste waypoint skal vaere ved malet");
+    }
+
+    #[test]
+    fn ref_aldri_pa_gull_og_malm_naaes_for_alle_niva() {
+        // For hvert niva: spillerens raffineri skal ALDRI sta oppa malm (da satte
+        // harvesteren seg fast uten a hente/levere), fotavtrykket skal vaere
+        // ryddet til gress, og minst en malm-rute skal vaere fremkommelig fra
+        // raffineriet sa hosting faktisk fungerer.
+        for lvl in 0..levels::count() {
+            let g = Game::new_level(lvl);
+            let refb = g
+                .buildings
+                .iter()
+                .find(|b| b.team == TEAM_PLAYER && b.kind == BuildingKind::Refinery)
+                .expect("spiller skal ha raffineri");
+            let r = refb.kind.radius();
+            let minx = ((refb.pos.x - r) / TILE).floor() as i32;
+            let maxx = ((refb.pos.x + r) / TILE).floor() as i32;
+            let miny = ((refb.pos.y - r) / TILE).floor() as i32;
+            let maxy = ((refb.pos.y + r) / TILE).floor() as i32;
+            for ty in miny..=maxy {
+                for tx in minx..=maxx {
+                    if in_bounds(tx, ty) {
+                        let idx = ty as usize * MAP_W + tx as usize;
+                        assert!(g.ore[idx] <= 0.0, "niva {}: raffineriet star oppa malm i ({},{})", lvl + 1, tx, ty);
+                        assert!(g.map[idx] == Terrain::Grass, "niva {}: raffineri-fotavtrykk ikke ryddet i ({},{})", lvl + 1, tx, ty);
+                    }
+                }
+            }
+            // BFS over fremkommelig terreng fra raffineri-ruta -> na minst en malm.
+            let rx = (refb.pos.x / TILE).floor() as i32;
+            let ry = (refb.pos.y / TILE).floor() as i32;
+            let mut seen = vec![false; MAP_W * MAP_H];
+            let mut q = std::collections::VecDeque::new();
+            seen[ry as usize * MAP_W + rx as usize] = true;
+            q.push_back((rx, ry));
+            let mut found_ore = false;
+            while let Some((x, y)) = q.pop_front() {
+                if g.ore[y as usize * MAP_W + x as usize] > 0.0 {
+                    found_ore = true;
+                    break;
+                }
+                for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)] {
+                    let (nx, ny) = (x + dx, y + dy);
+                    if in_bounds(nx, ny) {
+                        let ni = ny as usize * MAP_W + nx as usize;
+                        if !seen[ni] && g.map[ni].passable() {
+                            seen[ni] = true;
+                            q.push_back((nx, ny));
+                        }
+                    }
+                }
+            }
+            assert!(found_ore, "niva {}: ingen malm er fremkommelig fra raffineriet", lvl + 1);
+        }
     }
 
     #[test]

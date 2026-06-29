@@ -7,19 +7,21 @@
 
 use macroquad::prelude::*;
 
-use crate::i18n::{self, Key};
+use crate::i18n::{self, Key, Lang};
 use crate::{
-    bridge, levels, team_color, txt, txt_measure, unit_stats, BuildingKind, Game, Unit, UnitKind,
-    MAP_H, MAP_W, SIDEBAR_W, TEAM_ENEMY, TEAM_PLAYER, TILE,
+    bridge, levels, team_color, txt, txt_measure, unit_stats, BuildingKind, Game, Screen, Unit,
+    UnitKind, MAP_H, MAP_W, SIDEBAR_W, TEAM_ENEMY, TEAM_PLAYER, TILE,
 };
 
 
-// En rad i produksjonsko-popupen.
+// En rad i produksjonsko-popupen. Like ko-enheter pa rad slas sammen til en rad
+// med antall; X fjerner en av gangen.
 #[derive(Clone, Copy)]
 struct QRow {
     kind: UnitKind,
     building: bool, // true = aktiv byggeplass (under bygging), false = i ko
-    idx: usize,     // indeks i active hhv. queue
+    idx: usize,     // indeks i active, hhv. ko-indeks for FORSTE enhet i gruppa
+    count: usize,   // antall like pa rad (kun ko)
     frac: f32,      // fremdrift 0..1 (kun for aktive)
 }
 
@@ -52,9 +54,14 @@ impl Game {
     // ======================================================================
 
     // --- Geometri (logiske px; konsistent pa tvers av enheter) ---
+    // Trygg sone nederst (iPhone home-indikator / Safari). Litt skalering med
+    // hoyden, klamret. Brukes pa alle bunn-ankrede kontroller.
+    pub(crate) fn safe_bottom(&self) -> f32 {
+        (screen_height() * 0.05).clamp(20.0, 44.0)
+    }
     fn ui_joy(&self) -> (Vec2, f32) {
         let r = 56.0;
-        let c = vec2(self.play_w() - r - 24.0, screen_height() - r - 24.0);
+        let c = vec2(self.play_w() - r - 24.0, screen_height() - r - 24.0 - self.safe_bottom());
         (c, r)
     }
     fn ui_zoom_in(&self) -> Rect {
@@ -67,18 +74,32 @@ impl Game {
         // Under den bla HUD-linja, pa samme hoyde som zoom "+".
         Rect::new(screen_width() - 58.0, 38.0, 52.0, 36.0)
     }
+    // X for a lukke byggmenyen -- helt oppe til hoyre i sidebaren (ved "BUILD").
+    fn ui_sidebar_close(&self) -> Rect {
+        Rect::new(self.play_w() + SIDEBAR_W - 30.0, 4.0, 26.0, 24.0)
+    }
+    // Lyd av/pa -- rett over burger-knappen (kun nar byggmenyen er lukket).
+    fn ui_mute_btn(&self) -> Rect {
+        let b = self.ui_burger();
+        Rect::new(b.x, 4.0, b.w, 30.0)
+    }
     // Dev og sprakvelger ligger nederst i byggmenyen (burger/sidebar) -- borte
     // fra det mobil-uvennlige nedre venstre hjornet. Kun aktive nar sidebaren er
     // apen (apnes via burger eller ved a velge fabrikken).
-    fn ui_dev_btn(&self) -> Rect {
+    // Tre knapper pa nederste stripe i byggmenyen: Dev | Sprak | Niva.
+    fn ui_bottom_btn(&self, col: usize) -> Rect {
         let x = self.play_w() + 8.0;
-        let half = (SIDEBAR_W - 16.0 - 6.0) / 2.0;
-        Rect::new(x, screen_height() - 30.0, half, 24.0)
+        let third = (SIDEBAR_W - 16.0 - 8.0) / 3.0;
+        Rect::new(x + col as f32 * (third + 4.0), screen_height() - 30.0 - self.safe_bottom(), third, 24.0)
+    }
+    fn ui_dev_btn(&self) -> Rect {
+        self.ui_bottom_btn(0)
     }
     fn ui_lang_btn(&self) -> Rect {
-        let x = self.play_w() + 8.0;
-        let half = (SIDEBAR_W - 16.0 - 6.0) / 2.0;
-        Rect::new(x + half + 6.0, screen_height() - 30.0, half, 24.0)
+        self.ui_bottom_btn(1)
+    }
+    fn ui_level_btn(&self) -> Rect {
+        self.ui_bottom_btn(2)
     }
     // Seier/tap-panelets bunnboks. Returnerer (Spill igjen, evt. Neste niva).
     // Neste-knapp kun ved seier og hvis det finnes flere nivaer.
@@ -140,6 +161,9 @@ impl Game {
     /// Er punktet over en in-canvas-kontroll? Brukes til a stoppe kant-scroll
     /// og verdens-klikk nar man bruker UI/menyer.
     pub(crate) fn point_in_ui(&self, p: Vec2) -> bool {
+        if self.screen != Screen::Playing {
+            return true; // meny/guide dekker alt
+        }
         if self.outcome.is_some() {
             return true; // seier/tap-panel er modalt
         }
@@ -147,13 +171,22 @@ impl Game {
         if p.distance(jc) <= jr {
             return true;
         }
-        if self.ui_zoom_in().contains(p)
-            || self.ui_zoom_out().contains(p)
-            || self.ui_burger().contains(p)
+        if self.ui_zoom_in().contains(p) || self.ui_zoom_out().contains(p) {
+            return true;
+        }
+        // Burger + lyd-knapp vises kun nar byggmenyen er lukket.
+        if !self.sidebar_on() && (self.ui_burger().contains(p) || self.ui_mute_btn().contains(p)) {
+            return true;
+        }
+        if self.sidebar_on()
+            && (self.ui_dev_btn().contains(p)
+                || self.ui_lang_btn().contains(p)
+                || self.ui_level_btn().contains(p)
+                || self.ui_sidebar_close().contains(p))
         {
             return true;
         }
-        if self.sidebar_on() && (self.ui_dev_btn().contains(p) || self.ui_lang_btn().contains(p)) {
+        if self.nav_minimap_visible() && self.nav_minimap_rect().contains(p) {
             return true;
         }
         if self.dev_warn {
@@ -188,12 +221,21 @@ impl Game {
     fn queue_rows(&self) -> Vec<QRow> {
         let p = &self.prod[TEAM_PLAYER as usize];
         let mut v = Vec::new();
+        // Aktive byggeplasser vises hver for seg med fremdrift.
         for (i, (k, rem)) in p.active.iter().enumerate() {
             let frac = (1.0 - rem / unit_stats(*k).build_time).clamp(0.0, 1.0);
-            v.push(QRow { kind: *k, building: true, idx: i, frac });
+            v.push(QRow { kind: *k, building: true, idx: i, count: 1, frac });
         }
-        for (i, k) in p.queue.iter().enumerate() {
-            v.push(QRow { kind: *k, building: false, idx: i, frac: 0.0 });
+        // Ko: sla sammen like enheter pa rad -> en rad med antall.
+        let mut i = 0;
+        while i < p.queue.len() {
+            let k = p.queue[i];
+            let mut n = 1;
+            while i + n < p.queue.len() && p.queue[i + n] == k {
+                n += 1;
+            }
+            v.push(QRow { kind: k, building: false, idx: i, count: n, frac: 0.0 });
+            i += n;
         }
         v
     }
@@ -206,7 +248,9 @@ impl Game {
         }
         let w = 156.0;
         let h = p.active.len() as f32 * 22.0 + if p.queue.is_empty() { 0.0 } else { 18.0 } + 6.0;
-        Rect::new(screen_width() - w - 8.0, 34.0, w, h.max(20.0))
+        // Til venstre for burger-knappen (som ligger ytterst t.h.) sa et trykk pa
+        // burgeren ikke treffer produksjons-stripa under.
+        Rect::new(screen_width() - w - 66.0, 34.0, w, h.max(20.0))
     }
     fn queue_panel_rect(&self) -> Rect {
         let rows = self.queue_rows().len().max(1) as f32;
@@ -218,6 +262,7 @@ impl Game {
         let p = self.queue_panel_rect();
         Rect::new(p.x + 4.0, p.y + 30.0 + i as f32 * 26.0, p.w - 8.0, 24.0)
     }
+    // Fjern EN enhet fra raden (aktiv byggeplass, eller forste i ko-gruppa).
     fn queue_cancel(&mut self, row: QRow) {
         let p = &mut self.prod[TEAM_PLAYER as usize];
         if row.building {
@@ -230,15 +275,34 @@ impl Game {
         // Refunder kostnaden (full -- betalt ved bestilling).
         self.credits[TEAM_PLAYER as usize] += unit_stats(row.kind).cost;
     }
-    fn queue_move(&mut self, qidx: usize, up: bool) {
+    // Flytt hele ko-gruppa (alle like pa rad) fremst, foran alt annet i koen.
+    fn queue_to_front(&mut self, row: QRow) {
         let p = &mut self.prod[TEAM_PLAYER as usize];
-        if up {
-            if qidx > 0 && qidx < p.queue.len() {
-                p.queue.swap(qidx, qidx - 1);
+        let start = row.idx.min(p.queue.len());
+        let n = row.count.min(p.queue.len() - start);
+        let mut grp = Vec::with_capacity(n);
+        for _ in 0..n {
+            if let Some(k) = p.queue.remove(start) {
+                grp.push(k);
             }
-        } else if qidx + 1 < p.queue.len() {
-            p.queue.swap(qidx, qidx + 1);
         }
+        for k in grp.into_iter().rev() {
+            p.queue.push_front(k);
+        }
+    }
+    // Visningsrekkefolge for spraklista: engelsk forst, resten alfabetisk etter
+    // det engelske navnet. Returnerer indekser inn i i18n::LANGS.
+    fn lang_order(&self) -> Vec<usize> {
+        let mut rest: Vec<usize> = (0..i18n::LANGS.len())
+            .filter(|&i| i18n::LANGS[i].0 != Lang::En)
+            .collect();
+        rest.sort_by(|&a, &b| i18n::LANGS[a].4.cmp(i18n::LANGS[b].4));
+        let mut order = Vec::with_capacity(i18n::LANGS.len());
+        if let Some(en) = (0..i18n::LANGS.len()).find(|&i| i18n::LANGS[i].0 == Lang::En) {
+            order.push(en);
+        }
+        order.extend(rest);
+        order
     }
     fn lang_max_scroll(&self) -> f32 {
         let panel = self.lang_panel_rect();
@@ -291,6 +355,20 @@ impl Game {
     }
 
     fn dev_apply(&mut self, a: DevAct) {
+        // Disse handlingene regnes som juks -> nivaet far ingen tid/score.
+        if matches!(
+            a,
+            DevAct::Give
+                | DevAct::SpawnYou
+                | DevAct::SpawnFoe
+                | DevAct::Free
+                | DevAct::God
+                | DevAct::Reveal
+                | DevAct::Speed
+                | DevAct::Win
+        ) {
+            self.level_cheated = true;
+        }
         let world_center = self.screen_to_world(vec2(self.play_w() * 0.5, screen_height() * 0.5));
         match a {
             DevAct::Close => self.dev_open = false,
@@ -346,9 +424,20 @@ impl Game {
         let m = vec2(mx, my);
         let pressed = is_mouse_button_pressed(MouseButton::Left);
         let down = is_mouse_button_down(MouseButton::Left);
-        let released = is_mouse_button_released(MouseButton::Left);
         if pressed {
             self.ui_press = m;
+        }
+
+        // --- Sprakvelger (modal i alle skjermer) ---
+        if self.lang_open {
+            self.handle_lang_list(m);
+            return;
+        }
+
+        // --- Start/Guide-meny (egen handtering, pauser spillet) ---
+        if self.screen != Screen::Playing {
+            self.handle_menu(m, pressed);
+            return;
         }
 
         // --- Seier/tap-panel (modalt) ---
@@ -417,45 +506,6 @@ impl Game {
             return;
         }
 
-        // --- Sprakvelger (rullbar liste) ---
-        if self.lang_open {
-            let panel = self.lang_panel_rect();
-            let (_, wy) = mouse_wheel();
-            if wy != 0.0 && panel.contains(m) {
-                self.lang_scroll = (self.lang_scroll - wy * 30.0).clamp(0.0, self.lang_max_scroll());
-            }
-            if pressed && panel.contains(m) {
-                self.lang_dragging = false;
-                self.ui_block = true;
-            } else if pressed {
-                // Trykk utenfor panelet lukker lista.
-                self.lang_open = false;
-                self.ui_block = true;
-                return;
-            }
-            if down && panel.contains(m) {
-                let dy = my - self.last_mouse.y;
-                if (m - self.ui_press).length() > 6.0 {
-                    self.lang_dragging = true;
-                }
-                if self.lang_dragging {
-                    self.lang_scroll = (self.lang_scroll - dy).clamp(0.0, self.lang_max_scroll());
-                }
-                self.ui_block = true;
-            }
-            if released && panel.contains(m) && !self.lang_dragging {
-                // Tapp pa en rad -> velg sprak.
-                let rel = m.y - (panel.y + 4.0) + self.lang_scroll;
-                let idx = (rel / self.lang_row_h()).floor() as i32;
-                if idx >= 0 && (idx as usize) < i18n::LANGS.len() {
-                    self.lang = i18n::from_index(idx as usize);
-                    self.lang_open = false;
-                }
-                self.ui_block = true;
-            }
-            return;
-        }
-
         // --- Produksjonsko-popup (nar byggmenyen er lukket) ---
         if self.queue_open && !self.sidebar_on() {
             let rows = self.queue_rows();
@@ -475,18 +525,15 @@ impl Game {
                     let rr = self.queue_row_rect(i);
                     let xr = Rect::new(rr.x + rr.w - 24.0, rr.y + 2.0, 20.0, 20.0);
                     if xr.contains(m) {
-                        self.queue_cancel(*row);
+                        self.queue_cancel(*row); // fjern EN
                         return;
                     }
-                    if !row.building {
-                        let dn = Rect::new(rr.x + rr.w - 48.0, rr.y + 2.0, 20.0, 20.0);
-                        let up = Rect::new(rr.x + rr.w - 72.0, rr.y + 2.0, 20.0, 20.0);
+                    // Pil opp = flytt hele gruppa fremst i koen (foran alt annet).
+                    // Vises for alle ko-grupper unntatt den som allerede ligger forst.
+                    if !row.building && row.idx > 0 {
+                        let up = Rect::new(rr.x + rr.w - 48.0, rr.y + 2.0, 20.0, 20.0);
                         if up.contains(m) {
-                            self.queue_move(row.idx, true);
-                            return;
-                        }
-                        if dn.contains(m) {
-                            self.queue_move(row.idx, false);
+                            self.queue_to_front(*row);
                             return;
                         }
                     }
@@ -514,12 +561,32 @@ impl Game {
                 self.ui_block = true;
                 return;
             }
-            if self.ui_burger().contains(m) {
-                self.sidebar_open = !self.sidebar_open;
+            // Burger vises kun nar byggmenyen er lukket -> apner den. Lukkes ved
+            // a klikke pa kartet (handle_selection) eller velge enheter.
+            if !self.sidebar_on() && self.ui_burger().contains(m) {
+                self.sidebar_open = true;
                 self.ui_block = true;
                 return;
             }
-            // Dev/sprak ligger i sidebaren -> kun nar den er apen.
+            // Lyd av/pa over burgeren (kun nar menyen er lukket).
+            if !self.sidebar_on() && self.ui_mute_btn().contains(m) {
+                self.muted = !self.muted;
+                bridge::set_muted(self.muted);
+                self.ui_block = true;
+                return;
+            }
+            // X oppe til hoyre i sidebaren lukker byggmenyen.
+            if self.sidebar_on() && self.ui_sidebar_close().contains(m) {
+                self.sidebar_open = false;
+                self.ui_block = true;
+                return;
+            }
+            // Dev/sprak/niva ligger i sidebaren -> kun nar den er apen.
+            if self.sidebar_on() && self.ui_level_btn().contains(m) {
+                self.screen = Screen::Start; // apne nivameny
+                self.ui_block = true;
+                return;
+            }
             if self.sidebar_on() && self.ui_dev_btn().contains(m) {
                 if self.cheater {
                     self.dev_open = !self.dev_open;
@@ -579,19 +646,49 @@ impl Game {
         btn(zi, zi.contains(m), "+", 26.0, false);
         btn(zo, zo.contains(m), "-", 26.0, false);
 
-        // Burger (X nar apen)
-        let bu = self.ui_burger();
-        btn(bu, bu.contains(m), if self.sidebar_open { "X" } else { "=" }, 18.0, false);
+        // Burger -- kun nar byggmenyen er lukket (apner den). Skjult nar apen.
+        if !self.sidebar_on() {
+            let bu = self.ui_burger();
+            btn(bu, bu.contains(m), "=", 18.0, false);
 
-        // Dev- og sprakknapp nederst i byggmenyen (kun nar sidebaren er apen).
+            // Lyd av/pa rett over burgeren -- hoyttalerikon (rod strek = av).
+            let mb = self.ui_mute_btn();
+            let hot = mb.contains(m);
+            draw_rectangle(mb.x, mb.y, mb.w, mb.h, if hot { Color::new(0.18, 0.24, 0.22, 0.95) } else { Color::new(0.10, 0.14, 0.12, 0.92) });
+            draw_rectangle_lines(mb.x, mb.y, mb.w, mb.h, 1.5, Color::new(0.25, 0.55, 0.35, 0.9));
+            let icx = mb.x + mb.w * 0.5;
+            let icy = mb.y + mb.h * 0.5;
+            let col = if self.muted { Color::new(0.95, 0.45, 0.40, 1.0) } else { Color::new(0.60, 0.95, 0.70, 1.0) };
+            // Hoyttaler: liten boks (driver) + kjegle.
+            draw_rectangle(icx - 9.0, icy - 3.0, 4.0, 6.0, col);
+            draw_triangle(vec2(icx - 5.0, icy - 7.0), vec2(icx - 5.0, icy + 7.0), vec2(icx + 1.0, icy), col);
+            if self.muted {
+                // Rod skrastrek = av.
+                draw_line(icx - 10.0, icy - 9.0, icx + 11.0, icy + 9.0, 2.0, col);
+            } else {
+                // Lydbolger = pa.
+                draw_line(icx + 5.0, icy - 5.0, icx + 5.0, icy + 5.0, 1.6, col);
+                draw_line(icx + 9.0, icy - 8.0, icx + 9.0, icy + 8.0, 1.6, col);
+            }
+        }
+
+        // Flytende minikart mens man navigerer (byggmeny lukket).
+        self.draw_nav_minimap();
+
+        // Dev / sprak / niva nederst i byggmenyen (kun nar sidebaren er apen).
         if self.sidebar_on() {
-            let strip_y = screen_height() - 36.0;
-            draw_rectangle(self.play_w(), strip_y, SIDEBAR_W, 36.0, Color::new(0.08, 0.09, 0.10, 1.0));
+            // X for a lukke menyen, oppe til hoyre ved "BUILD".
+            let cl = self.ui_sidebar_close();
+            btn(cl, cl.contains(m), "X", 16.0, false);
+            let strip_y = screen_height() - 36.0 - self.safe_bottom();
+            draw_rectangle(self.play_w(), strip_y, SIDEBAR_W, 36.0 + self.safe_bottom(), Color::new(0.08, 0.09, 0.10, 1.0));
             let dv = self.ui_dev_btn();
-            btn(dv, dv.contains(m), "Dev", 15.0, self.dev_open);
+            btn(dv, dv.contains(m), "Dev", 14.0, self.dev_open);
             let lg = self.ui_lang_btn();
             let iso = i18n::LANGS[i18n::index_of(self.lang)].1.to_uppercase();
-            btn(lg, lg.contains(m), &iso, 15.0, self.lang_open);
+            btn(lg, lg.contains(m), &iso, 14.0, self.lang_open);
+            let lv = self.ui_level_btn();
+            btn(lv, lv.contains(m), self.t(Key::LevelMenuBtn), 13.0, false);
         }
 
         // Joystick
@@ -635,30 +732,8 @@ impl Game {
             }
         }
 
-        // Sprakvelger-liste
-        if self.lang_open {
-            let p = self.lang_panel_rect();
-            draw_rectangle(p.x, p.y, p.w, p.h, panel_bg);
-            draw_rectangle_lines(p.x, p.y, p.w, p.h, 1.5, accent);
-            let rh = self.lang_row_h();
-            let cur = i18n::index_of(self.lang);
-            for (i, row) in i18n::LANGS.iter().enumerate() {
-                let ry = p.y + 4.0 + i as f32 * rh - self.lang_scroll;
-                if ry + rh < p.y || ry > p.y + p.h {
-                    continue; // utenfor synlig omrade
-                }
-                let hot = m.x >= p.x && m.x <= p.x + p.w && m.y >= ry && m.y < ry + rh;
-                if i == cur {
-                    draw_rectangle(p.x + 2.0, ry, p.w - 4.0, rh, Color::new(0.16, 0.30, 0.20, 0.9));
-                } else if hot {
-                    draw_rectangle(p.x + 2.0, ry, p.w - 4.0, rh, Color::new(0.14, 0.20, 0.16, 0.9));
-                }
-                let label = format!("{}  ·  {}", row.4, row.3); // engelsk · innfodt
-                txt(&label, p.x + 8.0, ry + rh * 0.5 + 5.0, 14.0, Color::new(0.85, 0.95, 0.88, 1.0));
-            }
-            // klipp-kant sa rader ikke flyter over rammen
-            draw_rectangle_lines(p.x, p.y, p.w, p.h, 2.0, accent);
-        }
+        // Sprakvelger-liste (delt med menyskjermen).
+        self.draw_lang_list(m);
 
         // Produksjonsko-popup
         if self.queue_open && !self.sidebar_on() {
@@ -677,19 +752,23 @@ impl Game {
                     if row.building {
                         draw_rectangle(rr.x, rr.y, rr.w * row.frac, rr.h, Color::new(0.20, 0.45, 0.28, 0.9));
                     }
-                    txt(self.t(row.kind.name_key()), rr.x + 6.0, rr.y + 17.0, 14.0, WHITE);
+                    // Navn + antall (f.eks. "Rifleman x4").
+                    let label = if row.count > 1 {
+                        format!("{} x{}", self.t(row.kind.name_key()), row.count)
+                    } else {
+                        self.t(row.kind.name_key()).to_string()
+                    };
+                    txt(&label, rr.x + 6.0, rr.y + 17.0, 14.0, WHITE);
                     if row.building {
                         let pct = format!("{}%", (row.frac * 100.0) as i32);
                         txt(&pct, rr.x + rr.w - 110.0, rr.y + 17.0, 12.0, Color::new(0.7, 0.95, 0.75, 1.0));
                     }
-                    // knapper til hoyre: [opp][ned][X] (opp/ned kun for ko-rader)
+                    // [X] fjerner en. Stridsvogn i ko far ogsa [^] = flytt fremst.
                     let xr = Rect::new(rr.x + rr.w - 24.0, rr.y + 2.0, 20.0, 20.0);
                     btn(xr, xr.contains(m), "X", 13.0, false);
-                    if !row.building {
-                        let dn = Rect::new(rr.x + rr.w - 48.0, rr.y + 2.0, 20.0, 20.0);
-                        let up = Rect::new(rr.x + rr.w - 72.0, rr.y + 2.0, 20.0, 20.0);
+                    if !row.building && row.idx > 0 {
+                        let up = Rect::new(rr.x + rr.w - 48.0, rr.y + 2.0, 20.0, 20.0);
                         btn(up, up.contains(m), "^", 13.0, false);
-                        btn(dn, dn.contains(m), "v", 13.0, false);
                     }
                 }
             }
@@ -730,12 +809,308 @@ impl Game {
             };
             let tcol = if win { Color::new(0.70, 1.0, 0.75, 1.0) } else { Color::new(1.0, 0.6, 0.5, 1.0) };
             let d = txt_measure(&title, 26.0);
-            txt(&title, b.x + (b.w - d.width).max(8.0) * 0.5, b.y + 50.0, 26.0, tcol);
+            txt(&title, b.x + (b.w - d.width).max(8.0) * 0.5, b.y + 46.0, 26.0, tcol);
+            // Tid som score -- kun ved seier uten juks.
+            if win && !self.level_cheated {
+                let secs = self.level_time as i32;
+                let s = format!("{}  {:02}:{:02}", self.t(Key::LevelTime), secs / 60, secs % 60);
+                let dt = txt_measure(&s, 18.0);
+                txt(&s, b.x + (b.w - dt.width) * 0.5, b.y + 74.0, 18.0, Color::new(0.85, 0.92, 1.0, 1.0));
+            }
             let (replay, next) = self.outcome_btns();
             btn(replay, replay.contains(m), self.t(Key::Replay), 16.0, false);
             if let Some(nx) = next {
                 btn(nx, nx.contains(m), self.t(Key::NextLevel), 16.0, false);
             }
         }
+    }
+
+    // ======================================================================
+    // Sprakliste (delt mellom verktoylinja og menyskjermen)
+    // ======================================================================
+    fn handle_lang_list(&mut self, m: Vec2) {
+        let panel = self.lang_panel_rect();
+        let pressed = is_mouse_button_pressed(MouseButton::Left);
+        let down = is_mouse_button_down(MouseButton::Left);
+        let released = is_mouse_button_released(MouseButton::Left);
+        let (_, wy) = mouse_wheel();
+        if wy != 0.0 && panel.contains(m) {
+            self.lang_scroll = (self.lang_scroll - wy * 30.0).clamp(0.0, self.lang_max_scroll());
+        }
+        if pressed && panel.contains(m) {
+            self.lang_dragging = false;
+            self.ui_block = true;
+        } else if pressed {
+            self.lang_open = false; // trykk utenfor lukker lista
+            self.ui_block = true;
+            return;
+        }
+        if down && panel.contains(m) {
+            let dy = m.y - self.last_mouse.y;
+            if (m - self.ui_press).length() > 6.0 {
+                self.lang_dragging = true;
+            }
+            if self.lang_dragging {
+                self.lang_scroll = (self.lang_scroll - dy).clamp(0.0, self.lang_max_scroll());
+            }
+            self.ui_block = true;
+        }
+        if released && panel.contains(m) && !self.lang_dragging {
+            let rel = m.y - (panel.y + 4.0) + self.lang_scroll;
+            let idx = (rel / self.lang_row_h()).floor() as i32;
+            let order = self.lang_order();
+            if idx >= 0 && (idx as usize) < order.len() {
+                self.lang = i18n::from_index(order[idx as usize]);
+                self.lang_open = false;
+            }
+            self.ui_block = true;
+        }
+    }
+
+    fn draw_lang_list(&self, m: Vec2) {
+        if !self.lang_open {
+            return;
+        }
+        let accent = team_color(TEAM_PLAYER);
+        let panel_bg = Color::new(0.08, 0.11, 0.09, 0.97);
+        let p = self.lang_panel_rect();
+        draw_rectangle(p.x, p.y, p.w, p.h, panel_bg);
+        draw_rectangle_lines(p.x, p.y, p.w, p.h, 1.5, accent);
+        let rh = self.lang_row_h();
+        let cur = i18n::index_of(self.lang);
+        for (i, &li) in self.lang_order().iter().enumerate() {
+            let row = &i18n::LANGS[li];
+            let ry = p.y + 4.0 + i as f32 * rh - self.lang_scroll;
+            if ry + rh < p.y || ry > p.y + p.h {
+                continue;
+            }
+            let hot = m.x >= p.x && m.x <= p.x + p.w && m.y >= ry && m.y < ry + rh;
+            if li == cur {
+                draw_rectangle(p.x + 2.0, ry, p.w - 4.0, rh, Color::new(0.16, 0.30, 0.20, 0.9));
+            } else if hot {
+                draw_rectangle(p.x + 2.0, ry, p.w - 4.0, rh, Color::new(0.14, 0.20, 0.16, 0.9));
+            }
+            let label = format!("{}  ·  {}", row.4, row.3);
+            txt(&label, p.x + 8.0, ry + rh * 0.5 + 5.0, 14.0, Color::new(0.85, 0.95, 0.88, 1.0));
+        }
+        draw_rectangle_lines(p.x, p.y, p.w, p.h, 2.0, accent);
+    }
+
+    // ======================================================================
+    // Start/Guide-meny (nivavalg, sprak, veiledning) -- alt i Rust
+    // ======================================================================
+    fn menu_cols(&self) -> usize {
+        (((screen_width() - 40.0) / 52.0) as usize).clamp(1, 12)
+    }
+    fn menu_visible_levels(&self) -> usize {
+        // Nivaer 0..=max_unlocked er spillbare; vis alle disse (nivå 1 forst).
+        (self.max_unlocked + 1).min(levels::count())
+    }
+    fn menu_level_rect(&self, i: usize) -> Rect {
+        let cols = self.menu_cols();
+        let (bw, bh, gap) = (44.0, 38.0, 8.0);
+        let total_w = cols as f32 * bw + (cols as f32 - 1.0) * gap;
+        let x0 = (screen_width() - total_w) * 0.5;
+        let y0 = 152.0;
+        let c = (i % cols) as f32;
+        let r = (i / cols) as f32;
+        Rect::new(x0 + c * (bw + gap), y0 + r * (bh + gap), bw, bh)
+    }
+    // Bunnknapper pa start-skjermen: 0=Sprak, 1=Veiledning, 2=Tilbake (om i gang).
+    fn menu_buttons(&self) -> Vec<(Rect, u8)> {
+        let mut ids: Vec<u8> = vec![0, 1];
+        if self.playing_started {
+            ids.push(2);
+        }
+        let n = ids.len() as f32;
+        let gap = 10.0;
+        let bw = 150.0_f32.min((screen_width() - 32.0 - (n - 1.0) * gap) / n);
+        let total = n * bw + (n - 1.0) * gap;
+        let x0 = (screen_width() - total) * 0.5;
+        let y = screen_height() - 58.0 - self.safe_bottom();
+        ids.into_iter()
+            .enumerate()
+            .map(|(i, id)| (Rect::new(x0 + i as f32 * (bw + gap), y, bw, 42.0), id))
+            .collect()
+    }
+    fn menu_back_rect(&self) -> Rect {
+        let bw = 160.0_f32.min(screen_width() - 32.0);
+        Rect::new((screen_width() - bw) * 0.5, screen_height() - 58.0 - self.safe_bottom(), bw, 42.0)
+    }
+    fn start_level(&mut self, lvl: usize) {
+        self.load_level(lvl);
+        self.screen = Screen::Playing;
+        self.playing_started = true;
+        self.sidebar_open = false; // start med kartet synlig; burger apner menyen
+    }
+    fn confirm_box(&self) -> Rect {
+        let bw = 360.0_f32.min(screen_width() - 40.0);
+        let bh = 150.0;
+        Rect::new((screen_width() - bw) * 0.5, (screen_height() - bh) * 0.5, bw, bh)
+    }
+    fn confirm_btns(&self) -> (Rect, Rect) {
+        let b = self.confirm_box();
+        let w = (b.w - 24.0) * 0.5;
+        let y = b.y + b.h - 46.0;
+        (Rect::new(b.x + 8.0, y, w, 34.0), Rect::new(b.x + 8.0 + w + 8.0, y, w, 34.0))
+    }
+    fn guide_lines(&self) -> [Key; 8] {
+        [
+            Key::GuideGoal, Key::GuideBuild, Key::GuideEconomy, Key::GuideMove,
+            Key::GuideNav, Key::GuideZoom, Key::GuideRally, Key::GuideWin,
+        ]
+    }
+    fn wrap_text(&self, s: &str, max_w: f32, fsz: f32) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut cur = String::new();
+        for word in s.split_whitespace() {
+            let trial = if cur.is_empty() { word.to_string() } else { format!("{} {}", cur, word) };
+            if txt_measure(&trial, fsz).width > max_w && !cur.is_empty() {
+                out.push(std::mem::take(&mut cur));
+                cur = word.to_string();
+            } else {
+                cur = trial;
+            }
+        }
+        if !cur.is_empty() {
+            out.push(cur);
+        }
+        out
+    }
+
+    fn handle_menu(&mut self, m: Vec2, pressed: bool) {
+        self.ui_block = true;
+        if !pressed {
+            return;
+        }
+        if self.screen == Screen::Guide {
+            if self.menu_back_rect().contains(m) {
+                self.screen = Screen::Start;
+            }
+            return;
+        }
+        // Bekreftelse for nivabytte (man mister gjeldende spill).
+        if let Some(lvl) = self.confirm_level {
+            let (yes, no) = self.confirm_btns();
+            if yes.contains(m) {
+                self.confirm_level = None;
+                self.start_level(lvl);
+            } else if no.contains(m) {
+                self.confirm_level = None;
+            }
+            return;
+        }
+        // Start-skjerm: nivaknapper. Bytte midt i et spill krever bekreftelse.
+        for i in 0..self.menu_visible_levels() {
+            if self.menu_level_rect(i).contains(m) {
+                if self.playing_started {
+                    self.confirm_level = Some(i);
+                } else {
+                    self.start_level(i);
+                }
+                return;
+            }
+        }
+        // Bunnknapper.
+        for (r, id) in self.menu_buttons() {
+            if r.contains(m) {
+                match id {
+                    0 => {
+                        self.lang_open = true;
+                        self.lang_scroll = 0.0;
+                    }
+                    1 => self.screen = Screen::Guide,
+                    _ => self.screen = Screen::Playing, // tilbake til spillet
+                }
+                return;
+            }
+        }
+    }
+
+    pub(crate) fn draw_menu(&self) {
+        let (mx, my) = mouse_position();
+        let m = vec2(mx, my);
+        let accent = team_color(TEAM_PLAYER);
+        draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::new(0.06, 0.08, 0.10, 1.0));
+        let btn = |r: Rect, hot: bool, label: &str, fsz: f32, active: bool| {
+            let bg = if active {
+                Color::new(0.16, 0.30, 0.20, 1.0)
+            } else if hot {
+                Color::new(0.18, 0.24, 0.22, 1.0)
+            } else {
+                Color::new(0.10, 0.14, 0.12, 1.0)
+            };
+            draw_rectangle(r.x, r.y, r.w, r.h, bg);
+            draw_rectangle_lines(r.x, r.y, r.w, r.h, 1.5, accent);
+            let d = txt_measure(label, fsz);
+            txt(label, r.x + (r.w - d.width) * 0.5, r.y + r.h * 0.5 + d.height * 0.35, fsz, Color::new(0.85, 0.96, 0.88, 1.0));
+        };
+
+        if self.screen == Screen::Guide {
+            let title = self.t(Key::GuideTitle);
+            let d = txt_measure(title, 30.0);
+            txt(title, (screen_width() - d.width) * 0.5, 70.0, 30.0, Color::new(0.85, 0.95, 1.0, 1.0));
+            let max_w = screen_width() - 80.0;
+            let mut y = 120.0;
+            for k in self.guide_lines() {
+                for line in self.wrap_text(self.t(k), max_w, 18.0) {
+                    txt(&line, 40.0, y, 18.0, Color::new(0.82, 0.90, 0.85, 1.0));
+                    y += 26.0;
+                }
+                y += 8.0;
+            }
+            let bk = self.menu_back_rect();
+            btn(bk, bk.contains(m), self.t(Key::MenuBack), 18.0, false);
+            self.draw_lang_list(m);
+            return;
+        }
+
+        // Start-skjerm.
+        let title = self.t(Key::MenuTitle);
+        let d = txt_measure(title, 34.0);
+        txt(title, (screen_width() - d.width) * 0.5, 66.0, 34.0, Color::new(0.85, 0.95, 1.0, 1.0));
+        let tag = "Morten Punnerud-Engelstad RA";
+        let dt = txt_measure(tag, 14.0);
+        txt(tag, (screen_width() - dt.width) * 0.5, 90.0, 14.0, Color::new(0.55, 0.66, 0.78, 1.0));
+        let sub = self.t(Key::MenuSelectLevel);
+        let ds = txt_measure(sub, 18.0);
+        txt(sub, (screen_width() - ds.width) * 0.5, 128.0, 18.0, Color::new(0.70, 0.82, 0.95, 1.0));
+
+        for i in 0..self.menu_visible_levels() {
+            let r = self.menu_level_rect(i);
+            let cur = i == self.level && self.playing_started;
+            btn(r, r.contains(m), &format!("{}", i + 1), 18.0, cur);
+        }
+
+        for (r, id) in self.menu_buttons() {
+            let label = match id {
+                0 => {
+                    let iso = i18n::LANGS[i18n::index_of(self.lang)].1.to_uppercase();
+                    format!("{}  {}", self.t(Key::MenuLanguage), iso)
+                }
+                1 => self.t(Key::MenuGuide).to_string(),
+                _ => self.t(Key::MenuResume).to_string(),
+            };
+            btn(r, r.contains(m), &label, 16.0, false);
+        }
+
+        // Bekreftelse for nivabytte (modal).
+        if self.confirm_level.is_some() {
+            draw_rectangle(0.0, 0.0, screen_width(), screen_height(), Color::new(0.0, 0.0, 0.0, 0.55));
+            let b = self.confirm_box();
+            draw_rectangle(b.x, b.y, b.w, b.h, Color::new(0.10, 0.13, 0.12, 0.98));
+            draw_rectangle_lines(b.x, b.y, b.w, b.h, 2.0, Color::new(0.9, 0.6, 0.3, 1.0));
+            let mut y = b.y + 40.0;
+            for line in self.wrap_text(self.t(Key::ConfirmSwitch), b.w - 28.0, 17.0) {
+                let d = txt_measure(&line, 17.0);
+                txt(&line, b.x + (b.w - d.width) * 0.5, y, 17.0, Color::new(1.0, 0.85, 0.55, 1.0));
+                y += 24.0;
+            }
+            let (yes, no) = self.confirm_btns();
+            btn(yes, yes.contains(m), self.t(Key::MenuSwitch), 16.0, false);
+            btn(no, no.contains(m), self.t(Key::DevCancel), 16.0, false);
+        }
+
+        self.draw_lang_list(m);
     }
 }
