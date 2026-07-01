@@ -102,6 +102,9 @@ mod bridge {
         fn js_poll_cmd() -> i32;
         fn js_poll_arg(i: i32) -> f32;
         fn js_sound(id: i32);
+        // Vedvarende lagring (localStorage). Henter i32::MIN nar nokkelen mangler.
+        fn js_store_get(key: i32) -> i32;
+        fn js_store_set(key: i32, val: i32);
     }
 
     use std::cell::Cell;
@@ -186,6 +189,33 @@ mod bridge {
         let _ = (explored_pct, visible_tiles, reveal);
     }
 
+    // Vedvarende nokkel/verdi-lagring (localStorage i nettleser; no-op nativt).
+    // Returnerer None nar nokkelen ikke finnes (JS gir i32::MIN som sentinel).
+    pub fn store_get(key: i32) -> Option<i32> {
+        #[cfg(target_arch = "wasm32")]
+        unsafe {
+            let v = js_store_get(key);
+            if v == i32::MIN {
+                None
+            } else {
+                Some(v)
+            }
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let _ = key;
+            None
+        }
+    }
+    pub fn store_set(key: i32, val: i32) {
+        #[cfg(target_arch = "wasm32")]
+        unsafe {
+            js_store_set(key, val);
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        let _ = (key, val);
+    }
+
     pub fn poll() -> (i32, [f32; 4]) {
         #[cfg(target_arch = "wasm32")]
         unsafe {
@@ -213,6 +243,13 @@ const SIDEBAR_W: f32 = 150.0;
 
 const TEAM_PLAYER: u8 = 0;
 const TEAM_ENEMY: u8 = 1;
+
+// localStorage-nokler (numerisk bro). Lagrer fremgang + innstillinger sa spillet
+// huskes mellom okter pa https://punnerud.github.io/mpe-ra/.
+const STORE_UNLOCKED: i32 = 1; // hoyeste opplaste niva
+const STORE_LEVEL: i32 = 2; // sist spilte niva (menyen markerer dette)
+const STORE_LANG: i32 = 3; // spraakindeks
+const STORE_MUTED: i32 = 4; // lyd av/pa
 
 const SHOT_LIFETIME: f32 = 0.08;
 
@@ -1051,6 +1088,36 @@ impl Game {
         self.max_unlocked = unlocked;
         self.playing_started = started;
         bridge::set_muted(muted);
+        self.save_progress();
+    }
+
+    // Lagre fremgang + innstillinger til localStorage (huskes mellom okter).
+    fn save_progress(&self) {
+        bridge::store_set(STORE_UNLOCKED, self.max_unlocked as i32);
+        bridge::store_set(STORE_LEVEL, self.level as i32);
+        bridge::store_set(STORE_LANG, i18n::index_of(self.lang) as i32);
+        bridge::store_set(STORE_MUTED, self.muted as i32);
+    }
+
+    // Hent tidligere lagret fremgang + innstillinger ved oppstart. Kalles en
+    // gang etter Game::new(); menyen viser da opplaste nivaer og valgt sprak.
+    fn load_progress(&mut self) {
+        if let Some(v) = bridge::store_get(STORE_LANG) {
+            self.lang = i18n::from_index(v.max(0) as usize);
+        }
+        if let Some(v) = bridge::store_get(STORE_MUTED) {
+            self.muted = v != 0;
+            bridge::set_muted(self.muted);
+        }
+        let last = levels::count().saturating_sub(1);
+        if let Some(v) = bridge::store_get(STORE_UNLOCKED) {
+            self.max_unlocked = (v.max(0) as usize).min(last);
+        }
+        if let Some(v) = bridge::store_get(STORE_LEVEL) {
+            let lvl = (v.max(0) as usize).min(self.max_unlocked);
+            self.level = lvl;
+            self.preview_level = lvl;
+        }
     }
 
     /// Oversett en nokkel til valgt sprak (engelsk fallback).
@@ -1605,25 +1672,19 @@ impl Game {
     }
 
     fn clamp_camera(&mut self) {
-        // Litt luft rundt kartet sa man kan dra forbi kanten (basen klistrer seg
-        // ikke helt mot skjermkanten). 6 ruter overscroll i hver retning.
-        let margin = 6.0 * TILE;
+        // Overscroll = halve synsfeltet i hver retning (minst 6 ruter luft pa sma
+        // skjermer). Da kan ethvert punkt pa kartet -- ogsa en base helt i hjornet
+        // -- dras helt inn til midten av skjermen, selv pa store skjermer der
+        // kartet er smalere enn viewporten og "stopper" for kanten.
         let map_px = vec2(MAP_W as f32 * TILE, MAP_H as f32 * TILE);
         let view = vec2(self.play_w(), screen_height()) / self.zoom;
-        let min_x = -margin;
-        let min_y = -margin;
-        let max_x = map_px.x - view.x + margin;
-        let max_y = map_px.y - view.y + margin;
-        self.cam.x = if max_x > min_x {
-            self.cam.x.clamp(min_x, max_x)
-        } else {
-            (map_px.x - view.x) / 2.0
-        };
-        self.cam.y = if max_y > min_y {
-            self.cam.y.clamp(min_y, max_y)
-        } else {
-            (map_px.y - view.y) / 2.0
-        };
+        let margin = vec2((view.x * 0.5).max(6.0 * TILE), (view.y * 0.5).max(6.0 * TILE));
+        let min_x = -margin.x;
+        let min_y = -margin.y;
+        let max_x = (map_px.x - view.x + margin.x).max(min_x);
+        let max_y = (map_px.y - view.y + margin.y).max(min_y);
+        self.cam.x = self.cam.x.clamp(min_x, max_x);
+        self.cam.y = self.cam.y.clamp(min_y, max_y);
     }
 
     fn clear_selection(&mut self) {
@@ -2906,6 +2967,7 @@ impl Game {
         let next = (self.level + 1).min(levels::count().saturating_sub(1));
         if next > self.max_unlocked {
             self.max_unlocked = next;
+            self.save_progress();
         }
     }
 
@@ -3001,6 +3063,7 @@ impl Game {
             15 => {
                 // Velg sprak ut fra flaggvelger-indeks.
                 self.lang = i18n::from_index(a[0] as usize);
+                self.save_progress();
             }
             16 => {
                 // Burger: vis/skjul byggmenyen.
@@ -3772,6 +3835,7 @@ async fn main() {
     }
 
     let mut game = Game::new();
+    game.load_progress(); // gjenopprett fremgang + sprak/lyd fra localStorage
 
     loop {
         let dt = get_frame_time().min(0.05);

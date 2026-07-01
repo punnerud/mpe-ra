@@ -436,6 +436,7 @@ impl Game {
             DevAct::Sound => {
                 self.muted = !self.muted;
                 bridge::set_muted(self.muted);
+                self.save_progress();
             }
             DevAct::Win => self.outcome = Some(true),
         }
@@ -611,6 +612,7 @@ impl Game {
                     if self.settings_row_rect(0).contains(m) {
                         self.muted = !self.muted;
                         bridge::set_muted(self.muted);
+                        self.save_progress();
                     } else if self.settings_row_rect(1).contains(m) {
                         self.paused = !self.paused;
                     }
@@ -941,6 +943,7 @@ impl Game {
                 if idx >= 0 && (idx as usize) < order.len() {
                     self.lang = i18n::from_index(order[idx as usize]);
                     self.lang_open = false;
+                    self.save_progress();
                 }
                 self.ui_block = true;
             }

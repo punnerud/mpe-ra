@@ -99,6 +99,18 @@
         env.js_poll_cmd = function () { const f = queue.shift(); return f ? f.code : 0; };
         // Spillet ber om en lyd (prosedyral Web Audio-synth, ingen lydfiler).
         env.js_sound = function (id) { try { playSound(id | 0); } catch (e) {} };
+        // Vedvarende lagring: fremgang + innstillinger i localStorage. Numerisk
+        // (en i32 pr. nokkel). Fraverende nokkel -> i32::MIN (-2147483648) som Rust
+        // tolker som "ingen lagret verdi". Feiler stille (privat modus e.l.).
+        env.js_store_get = function (key) {
+            try {
+                const v = localStorage.getItem("mpera_" + (key | 0));
+                return v === null ? -2147483648 : (parseInt(v, 10) | 0);
+            } catch (e) { return -2147483648; }
+        };
+        env.js_store_set = function (key, val) {
+            try { localStorage.setItem("mpera_" + (key | 0), String(val | 0)); } catch (e) {}
+        };
     }
 
     if (typeof miniquad_add_plugin === "function") {
